@@ -1,0 +1,410 @@
+// Prisma schema for WorkDash — database models for the Markdown vault index,
+// meetings pipeline, calendar sync, and chat support tables.
+//
+// The DingTalk conversations/messages tables are managed by raw SQL
+// (services/dingtalk-bridge + lib/dingtalk); see
+// prisma/migrations/0002_dingtalk_chat_tables/migration.sql. They are
+// intentionally not represented here so Prisma Migrate does not touch them.
+
+datasource db {
+  provider = "postgresql"
+}
+
+generator client {
+  provider        = "prisma-client-js"
+  engineType      = "library"
+  previewFeatures = ["driverAdapters"]
+}
+
+// ─── Notes: Index of all Markdown files in the vault ──────────────────────────
+model Note {
+  id              String    @id @default(cuid())
+  filepath        String    @unique
+  fileHash        String    @map("file_hash")
+  baseType        String    @map("base_type")
+  title           String
+  frontmatterJson Json      @map("frontmatter_json")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+  indexedAt       DateTime  @default(now()) @map("indexed_at")
+  fileModifiedAt  DateTime? @map("file_modified_at")
+  deletedAt       DateTime? @map("deleted_at")
+
+  task        Task?
+  project     Project?
+  idea        Idea?
+  meeting     Meeting?
+  syncState   SyncState?
+  suggestions EntitySuggestion[]
+
+  @@index([baseType])
+  @@index([deletedAt])
+  @@map("notes")
+}
+
+// ─── Tasks: Typed view for notes with base [[Tasks.base]] ────────────────────
+model Task {
+  id     String @id @default(cuid())
+  noteId String @unique @map("note_id")
+  note   Note   @relation(fields: [noteId], references: [id], onDelete: Cascade)
+
+  title        String
+  status       String    @default("Todo")
+  whenDate     DateTime? @map("when_date")
+  priority     String    @default("Medium")
+  project      String?
+  domain       String?
+  courses      String[]  @default([])
+  people       String[]  @default([])
+  notesSummary String?   @map("notes_summary")
+  tags         String[]  @default([])
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  events TaskEvent[]
+
+  @@index([status])
+  @@index([whenDate])
+  @@index([priority])
+  @@index([project])
+  @@index([domain])
+  @@map("tasks")
+}
+
+// ─── Projects: Typed view for notes with base [[Projects.base]] ──────────────
+model Project {
+  id     String @id @default(cuid())
+  noteId String @unique @map("note_id")
+  note   Note   @relation(fields: [noteId], references: [id], onDelete: Cascade)
+
+  title        String
+  status       String    @default("Active")
+  targetDate   DateTime? @map("target_date")
+  area         String?
+  domain       String?
+  linkedTasks  String[]  @default([]) @map("linked_tasks")
+  people       String[]  @default([])
+  notesSummary String?   @map("notes_summary")
+  tags         String[]  @default([])
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([status])
+  @@index([area])
+  @@map("projects")
+}
+
+// ─── Ideas: Typed view for notes with base [[Ideas.base]] ────────────────────
+model Idea {
+  id     String @id @default(cuid())
+  noteId String @unique @map("note_id")
+  note   Note   @relation(fields: [noteId], references: [id], onDelete: Cascade)
+
+  title        String
+  status       String    @default("Backburner")
+  domain       String?
+  impact       String?
+  effort       String?
+  ideaCreated  DateTime? @map("idea_created")
+  notesSummary String?   @map("notes_summary")
+  tags         String[]  @default([])
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([status])
+  @@index([domain])
+  @@map("ideas")
+}
+
+// ─── Meetings: Typed view for notes with base [[Meetings.base]] ──────────────
+model Meeting {
+  id     String @id @default(cuid())
+  noteId String @unique @map("note_id")
+  note   Note   @relation(fields: [noteId], references: [id], onDelete: Cascade)
+
+  title        String
+  meetingDate  DateTime? @map("meeting_date")
+  meetingType  String?   @map("meeting_type")
+  attendees    String[]  @default([])
+  project      String?
+  area         String?
+  actionItems  String[]  @default([]) @map("action_items")
+  decisions    String?
+  notesSummary String?   @map("notes_summary")
+  tags         String[]  @default([])
+  // Linker idempotency: when the meeting was last link-linted, and the hash of
+  // the note content + vault entity list seen at that time (skip if unchanged).
+  linkedAt     DateTime? @map("linked_at")
+  lintHash     String?   @map("lint_hash")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([meetingDate])
+  @@index([meetingType])
+  @@map("meetings")
+}
+
+// ─── MeetingJob: Audio-to-note processing jobs ───────────────────────────────
+model MeetingJob {
+  id         String    @id @default(cuid())
+  audioName  String    @map("audio_name")
+  audioSize  Int       @map("audio_size")
+  audioKey   String?   @map("audio_key")
+  // Ordered list of uploaded audio files for multi-part meetings.
+  audioFiles Json?     @map("audio_files")
+  // Supplementary documents attached to the meeting (resumes, decks, etc.).
+  supplementaryFiles Json? @map("supplementary_files")
+  status     String    @default("queued")
+  step       String?
+  asrTaskId  String?   @map("asr_task_id")
+  // Per-file ASR task IDs for multi-part audio jobs.
+  asrTaskIds Json?     @map("asr_task_ids")
+  asrChars   Int?      @map("asr_chars")
+  // Serialized pass-1 output ({metadata, cleanedTranscript, sourceName}) kept
+  // after the clean pass so a retry (container restart mid-job, user requeue)
+  // skips ASR + cleaning entirely.
+  pass1Json  String?   @map("pass1_json") @db.Text
+  // Raw ASR transcript retained for provenance and future clean-pass experiments.
+  rawTranscript String? @map("raw_transcript") @db.Text
+  // Authoritative whole-transcript analysis (meeting_analysis_v1), persisted
+  // after validation; downstream summaries/tasks/entity updates derive from it.
+  analysisJson String? @map("analysis_json") @db.Text
+  // Optional organizer-supplied participant / group hints (e.g. "Alex, leadership team").
+  participantsText String? @map("participants_text") @db.Text
+  outputPath String?   @map("output_path")
+  error      String?
+  // Raw opencode formatter output captured when parsing fails, for debugging.
+  opencodeRawOutput String? @map("opencode_raw_output") @db.Text
+  // opencode session backing the format/linker stage (inspectable in opencode web).
+  opencodeSessionId String? @map("opencode_session_id")
+  opencodeShareUrl  String? @map("opencode_share_url")
+  // Client-generated idempotency key for the autochunking upload session.
+  uploadSubmissionId String? @unique @map("upload_submission_id")
+  startedAt  DateTime? @map("started_at")
+  finishedAt DateTime? @map("finished_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+  updatedAt  DateTime  @updatedAt @map("updated_at")
+
+  uploads MeetingUpload[]
+
+  @@index([status])
+  @@map("meeting_jobs")
+}
+
+model MeetingEntityEffect {
+  id             String   @id @default(cuid())
+  // sha256(analysis_id + entity_update_id) — THE identity of one applied effect.
+  effectId       String   @unique @map("effect_id")
+  jobId          String   @map("job_id")
+  analysisId     String   @map("analysis_id")
+  entityUpdateId String   @map("entity_update_id")
+  entityFilepath String   @map("entity_filepath")
+  // Meeting-scoped normalized-fact hash — secondary duplicate defense only.
+  factHash       String   @map("fact_hash")
+  // log (auto-appended) | profile (went through the review inbox)
+  kind           String
+  payload        Json?
+  appliedAt      DateTime @default(now()) @map("applied_at")
+
+  @@index([jobId])
+  @@index([jobId, entityFilepath, factHash])
+  @@map("meeting_entity_effects")
+}
+
+// ─── MeetingUpload: Per-file upload lifecycle for autochunked submissions ────
+// Child of MeetingJob. One row per file (audio or supplementary) in a chunked
+// upload session. Carries S3 multipart state so a crash mid-upload can be
+// recovered or aborted. After /complete, job.audioFiles/supplementaryFiles are
+// materialized from these rows for the existing ASR pipeline.
+model MeetingUpload {
+  id                 String   @id @default(cuid())
+  jobId              String   @map("job_id")
+  job                MeetingJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  kind               String   @default("audio") // audio | supplementary
+  fileIndex          Int      @map("file_index")
+  originalName       String   @map("original_name")
+  contentType        String   @map("content_type")
+  expectedSize       Int      @map("expected_size")
+  s3Key              String?  @map("s3_key")
+  // S3 multipart upload ID (null for single-PUT uploads ≤ chunkSize).
+  multipartUploadId  String?  @map("multipart_upload_id")
+  mode               String   @default("single") // single | multipart
+  status             String   @default("pending") // pending|uploading|completing|uploaded|aborted|failed
+  // Mirrored part metadata for observability; S3 ListParts is authoritative at completion.
+  parts              Json?
+  retryCount         Int      @default(0) @map("retry_count")
+  lastActivityAt     DateTime @default(now()) @map("last_activity_at")
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+
+  @@unique([jobId, kind, fileIndex])
+  @@index([status])
+  @@index([lastActivityAt])
+  @@map("meeting_uploads")
+}
+
+// ─── TaskEvent: Audit log for task field changes ─────────────────────────────
+model TaskEvent {
+  id     String @id @default(cuid())
+  taskId String @map("task_id")
+  task   Task   @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  eventType String   @map("event_type")
+  field     String?
+  oldValue  String?  @map("old_value")
+  newValue  String?  @map("new_value")
+  source    String
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([taskId])
+  @@index([createdAt])
+  @@map("task_events")
+}
+
+// ─── SyncState: Per-note sync tracking for loop prevention ───────────────────
+model SyncState {
+  id     String @id @default(cuid())
+  noteId String @unique @map("note_id")
+  note   Note   @relation(fields: [noteId], references: [id], onDelete: Cascade)
+
+  lastSeenHash    String   @map("last_seen_hash")
+  lastWrittenHash String?  @map("last_written_hash")
+  syncStatus      String   @default("clean") @map("sync_status")
+  lastError       String?  @map("last_error")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  @@map("sync_state")
+}
+
+// ─── PushSubscription: Web Push notification subscriptions ───────────────────
+model PushSubscription {
+  id        String   @id @default(cuid())
+  endpoint  String   @unique
+  keys      Json
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("push_subscriptions")
+}
+
+// ─── CalDavSource: Discovered CalDAV calendar collections (read-only cache) ───
+model CalDavSource {
+  id            String    @id @default(cuid())
+  url           String    @unique
+  displayName   String?   @map("display_name")
+  enabled       Boolean   @default(true)
+  ctag          String?
+  syncToken     String?   @map("sync_token")
+  lastSyncAt    DateTime? @map("last_sync_at")
+  lastSyncError String?   @map("last_sync_error") @db.Text
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  objects CalDavObject[]
+
+  @@map("caldav_sources")
+}
+
+// ─── CalDavObject: Cached calendar object resources (raw ICS + ETag) ─────────
+model CalDavObject {
+  id          String    @id @default(cuid())
+  sourceId    String    @map("source_id")
+  source      CalDavSource @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  href        String
+  etag        String?
+  uid         String?
+  summary     String?
+  description String?   @db.Text
+  location    String?
+  startAt     DateTime? @map("start_at")
+  endAt       DateTime? @map("end_at")
+  allDay      Boolean   @default(false) @map("all_day")
+  status      String?
+  rawIcal     String    @map("raw_ical") @db.Text
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  @@unique([sourceId, href])
+  @@index([startAt])
+  @@index([uid])
+  @@map("caldav_objects")
+}
+
+// ─── CalDavSyncState: Account-level sync status for UI / workers ─────────────
+model CalDavSyncState {
+  id            String    @id @default(cuid())
+  key           String    @unique
+  lastSyncAt    DateTime? @map("last_sync_at")
+  lastSyncError String?   @map("last_sync_error") @db.Text
+  lastStatus    String    @default("idle") @map("last_status")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  @@map("caldav_sync_state")
+}
+
+// ─── LocalCalendarEvent: Agent-created events stored locally (CalDAV is read-only) ──
+model LocalCalendarEvent {
+  id          String   @id @default(cuid())
+  uid         String   @unique
+  summary     String
+  description String?  @db.Text
+  location    String?
+  startAt     DateTime @map("start_at")
+  endAt       DateTime @map("end_at")
+  allDay      Boolean  @default(false) @map("all_day")
+  sequence    Int      @default(0)
+  origin      String   @default("agent")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@index([startAt])
+  @@map("local_calendar_events")
+}
+
+// ─── EntitySuggestion: Link-review inbox for unresolved/fuzzy entity mentions ─
+// Populated by the meeting-linker worker (opencode agent proposes, code applies
+// exact matches via write-back and queues the rest here for human review).
+model EntitySuggestion {
+  id                   String    @id @default(cuid())
+  noteId               String?   @map("note_id")
+  note                 Note?     @relation(fields: [noteId], references: [id], onDelete: SetNull)
+  filepath             String
+  mention              String
+  suggestedType        String    @map("suggested_type")
+  evidence             String?
+  suggestedExistingNote String?  @map("suggested_existing_note")
+  status               String    @default("pending")
+  opencodeSessionId    String?   @map("opencode_session_id")
+  createdAt            DateTime  @default(now()) @map("created_at")
+  resolvedAt           DateTime? @map("resolved_at")
+
+  @@index([status])
+  @@index([noteId])
+  @@index([filepath])
+  @@index([suggestedType])
+  @@map("entity_suggestions")
+}
+
+model LlmTier {
+  tier      String   @id
+  model     String
+  baseUrl   String   @map("base_url")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("llm_tiers")
+}
+
+// ─── HermesSessionPin: Pinned chat sessions per Hermes profile ───────────────
+model HermesSessionPin {
+  id        String   @id @default(cuid())
+  profile   String
+  sessionId String   @map("session_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@unique([profile, sessionId])
+  @@index([profile, createdAt])
+  @@map("hermes_session_pins")
+}

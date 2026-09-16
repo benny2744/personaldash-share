@@ -1,0 +1,1 @@
+"""Qwen realtime voice sidecar for PersonalDash (media proxy only)."""

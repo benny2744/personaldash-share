@@ -1,0 +1,11 @@
+[Unit]
+Description=WorkDash DingTalk history backfill (pulls recent messages into Postgres)
+
+[Service]
+Type=oneshot
+WorkingDirectory=/path/to/workdash
+Environment=DATABASE_URL=postgresql://workdash:CHANGE_ME@localhost:5432/workdash
+Environment=DWS_PATH=/home/you/.local/bin/dws
+# How far back to pull on each run:
+Environment=DAYS_BACK=90
+ExecStart=/usr/bin/node services/dingtalk-bridge/backfill.js

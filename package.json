@@ -1,0 +1,74 @@
+{
+  "name": "workdash",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build --webpack",
+    "start": "next start",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "node --import ./scripts/register-alias-hooks.mjs --test lib/caldav/parse.test.js lib/caldav/payload.test.js lib/agentAuth.test.js lib/gbrainSync.test.js lib/agents/hermesRuntime.test.js lib/hermes/api.test.js lib/hermes/gatewayClient.test.js lib/hermes/chatReducer.test.js lib/hermes/filePreview.test.js lib/hermes/attachments.test.js lib/hermes/transcriptSync.test.js lib/hermes/reconnect.test.js lib/hermes/panelState.test.js lib/hermes/sessionOrder.test.js lib/hermes/modelOptions.test.js lib/hermes/tierModels.test.js lib/hermes/speechText.test.js lib/hermes/transcriptDraft.test.js lib/hermes/voiceLease.test.js lib/hermes/voiceStream.test.js lib/hermes/voiceCapture.test.js lib/hermes/voicePlayback.test.js lib/hermes/voiceRecording.test.js lib/meetingPipeline/uploadHelpers.test.js lib/meetingPipeline/recover.test.js lib/meetingPipeline/asr.test.js lib/meetingPipeline/analysis.test.js lib/meetingPipeline/entityUpdates.test.js lib/meetingPipeline/vaultContext.test.js lib/meetingPipeline/asrRecovery.test.js lib/meetingPipeline/llm.test.js lib/cache/eviction.test.js lib/cache/localStore.test.js lib/cache/blobStore.test.js lib/cache/manager.test.js lib/cache/hermesCache.test.js lib/cache/dingTalkCache.test.js",
+    "smoke:meetings": "node scripts/smoke-meeting-pipeline.mjs"
+  },
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.1057.0",
+    "@aws-sdk/s3-request-presigner": "^3.1057.0",
+    "@prisma/adapter-pg": "^7.8.0",
+    "@prisma/client": "^7.8.0",
+    "@serwist/next": "^9.5.11",
+    "chokidar": "^5.0.0",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "dotenv": "^17.4.2",
+    "gray-matter": "^4.0.3",
+    "ical.js": "^2.2.1",
+    "idb": "^8.0.3",
+    "lucide-react": "^1.17.0",
+    "next": "16.2.6",
+    "p-queue": "^9.3.0",
+    "pdfjs-dist": "^6.2.108",
+    "pg": "^8.21.0",
+    "react": "19.2.6",
+    "react-dom": "19.2.6",
+    "react-markdown": "^10.1.0",
+    "recharts": "^3.8.1",
+    "remark-gfm": "^4.0.1",
+    "serwist": "^9.5.11",
+    "swr": "^2.4.1",
+    "tailwind-merge": "^3.6.0",
+    "tailwindcss": "^4.3.0",
+    "tsdav": "^2.3.1",
+    "web-push": "^3.6.7"
+  },
+  "devDependencies": {
+    "@eslint/compat": "^2.1.0",
+    "@tailwindcss/postcss": "^4.3.0",
+    "eslint": "^10.4.1",
+    "eslint-config-next": "^16.2.6",
+    "espree": "^11.2.0",
+    "fake-indexeddb": "^6.2.5",
+    "js-yaml": "^5.4.2",
+    "jsonrepair": "^3.14.1",
+    "postcss": "^8.5.15",
+    "prettier": "^3.8.3",
+    "prisma": "^7.8.0",
+    "sharp": "^0.34.5"
+  },
+  "pnpm": {
+    "peerDependencyRules": {
+      "allowedVersions": {
+        "eslint": "10"
+      }
+    },
+    "onlyBuiltDependencies": [
+      "prisma",
+      "@prisma/engines"
+    ]
+  },
+  "packageManager": "pnpm@10.33.0+sha512.10568bb4a6afb58c9eb3630da90cc9516417abebd3fabbe6739f0ae795728da1491e9db5a544c76ad8eb7570f5c4bb3d6c637b2cb41bfdcdb47fa823c8649319"
+}

@@ -1,0 +1,97 @@
+# WorkDash — docker-compose (reference deployment)
+#
+# Copy .env.example to .env, fill in the values, then:
+#   docker compose up -d --build
+#
+# Layout:
+#   app (Next.js standalone, :3001) — the dashboard
+#   pipecat-voice (:3015)           — optional Qwen realtime ASR/TTS for chat voice
+#   libreoffice-converter (:8080)   — optional document text extraction (meeting attachments)
+#   db (Postgres 16)                — optional convenience database; point DATABASE_URL
+#                                     at your own Postgres instead if you prefer
+#
+# Put this file behind a reverse proxy with TLS. The app has NO built-in auth.
+
+services:
+  app:
+    build: .
+    container_name: workdash
+    # Match the host uid that owns the vault and the dws config dirs, so
+    # frontmatter write-back and dws token refresh are permitted, e.g.:
+    # user: '1000:1000'
+    ports:
+      - '127.0.0.1:3003:3001'
+    env_file:
+      - ./.env
+    environment:
+      - NODE_ENV=production
+      - TZ=${TZ:-Asia/Shanghai}
+      - PRISMA_CLIENT_ENGINE_TYPE=library
+      - VAULT_PATH=/vault
+      - DWS_PATH=/usr/local/bin/dws
+      - LIBREOFFICE_CONVERTER_URL=http://libreoffice-converter:8080
+      - VOICE_SERVICE_URL=http://pipecat-voice:3015
+    volumes:
+      # Your Markdown vault (read-write: write-back edits frontmatter).
+      - ${VAULT_HOST_PATH:?set VAULT_HOST_PATH in .env}:/vault
+      # dws CLI + its auth state, so DingTalk send/media work from the container.
+      # The app image runs as the `nextjs` user (HOME=/home/nextjs); dws reads
+      # its auth from $HOME/.dws and $HOME/.local/share/dws-cli.
+      - ${DWS_HOST_PATH:?set DWS_HOST_PATH in .env}:/usr/local/bin/dws:ro
+      - ${DWS_CONFIG_HOST_PATH:?set DWS_CONFIG_HOST_PATH in .env}:/home/nextjs/.dws
+      - ${DWS_DATA_HOST_PATH:?set DWS_DATA_HOST_PATH in .env}:/home/nextjs/.local/share/dws-cli
+      # Runtime cache for downloaded DingTalk media.
+      - ./data/dingtalk-media:/data/dingtalk-media
+    extra_hosts:
+      # Reach a host-side opencode server (`opencode serve`) from the container.
+      - 'host.docker.internal:host-gateway'
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+
+  pipecat-voice:
+    build: ./services/pipecat-voice
+    container_name: workdash-voice
+    ports:
+      - '127.0.0.1:3015:3015'
+    env_file:
+      - ./.env
+    environment:
+      - HOST=0.0.0.0
+      - TZ=${TZ:-Asia/Shanghai}
+      - PORT=3015
+    restart: unless-stopped
+
+  libreoffice-converter:
+    build: ./services/libreoffice-converter
+    container_name: workdash-libreoffice
+    ports:
+      - '127.0.0.1:8083:8080'
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+      - PORT=8080
+      - DOWNLOAD_TIMEOUT_MS=60000
+      - CONVERT_TIMEOUT_MS=120000
+    restart: unless-stopped
+
+  db:
+    image: postgres:16-alpine
+    container_name: workdash-db
+    # Only used when DATABASE_URL points at this service
+    # (postgresql://workdash:workdash@db:5432/workdash).
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER:-workdash}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      - POSTGRES_DB=${POSTGRES_DB:-workdash}
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-workdash}']
+      interval: 10s
+      timeout: 5s
+      retries: 6
+    restart: unless-stopped
+
+volumes:
+  db-data:

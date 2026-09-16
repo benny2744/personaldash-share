@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      # Placeholders — required by lib/config.js in production builds.
+      DATABASE_URL: postgresql://user:password@localhost:5432/workdash
+      VAULT_PATH: /tmp/vault
+      MEETING_S3_ENDPOINT: http://localhost:9000
+      MEETING_S3_PUBLIC_BASE: http://localhost:9000
+      QWEN_FILETRANS_BASE_URL: https://dashscope.aliyuncs.com/api/v1
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.0
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+      - run: pnpm test
+      - run: pnpm build

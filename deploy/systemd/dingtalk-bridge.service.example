@@ -1,0 +1,17 @@
+[Unit]
+Description=WorkDash DingTalk message collector (polls dws, upserts to Postgres)
+
+[Service]
+Type=simple
+WorkingDirectory=/path/to/workdash
+Environment=DATABASE_URL=postgresql://workdash:CHANGE_ME@localhost:5432/workdash
+Environment=DWS_PATH=/home/you/.local/bin/dws
+# Optional overrides:
+# Environment=POLL_INTERVAL_MS=30000
+# Environment=LOOKBACK_WINDOW_MS=60000
+ExecStart=/usr/bin/node services/dingtalk-bridge/collector.js
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=default.target
