@@ -13,17 +13,27 @@ function normalizeStatus(value) {
   return (value || '').toLowerCase().replace(/\s+/g, '');
 }
 
-export default function KanbanCard({ task, onDragStart, onOpen, onMove, statusOptions = [] }) {
+export default function KanbanCard({
+  task,
+  onDragStart,
+  onOpen,
+  onMove,
+  statusOptions = [],
+}) {
   const priority = (task.priority || 'medium').toLowerCase();
-  const status   = (task.status   || '').toLowerCase();
-  const meta     = PRIORITY_META[priority] || PRIORITY_META.medium;
+  const status = (task.status || '').toLowerCase();
+  const meta = PRIORITY_META[priority] || PRIORITY_META.medium;
   const normalizedStatus = normalizeStatus(task.status || 'todo');
-  const hasMoveOptions = typeof onMove === 'function' && statusOptions.length > 0;
+  const hasMoveOptions =
+    typeof onMove === 'function' && statusOptions.length > 0;
   const isProposed = status === 'proposed';
   const hasProposedQuickActions = isProposed && typeof onMove === 'function';
   const moveValue = useMemo(
-    () => (statusOptions.some((option) => option.value === normalizedStatus) ? normalizedStatus : statusOptions[0]?.value || normalizedStatus),
-    [normalizedStatus, statusOptions]
+    () =>
+      statusOptions.some((option) => option.value === normalizedStatus)
+        ? normalizedStatus
+        : statusOptions[0]?.value || normalizedStatus,
+    [normalizedStatus, statusOptions],
   );
 
   const isOverdue =
@@ -32,7 +42,10 @@ export default function KanbanCard({ task, onDragStart, onOpen, onMove, statusOp
     !['done', 'archived'].includes(status);
 
   const dateStr = task.whenDate
-    ? new Date(task.whenDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+    ? new Date(task.whenDate).toLocaleDateString(undefined, {
+        month: 'short',
+        day: 'numeric',
+      })
     : null;
 
   // Distinguish a drag gesture from a click so opening the drawer
@@ -52,7 +65,10 @@ export default function KanbanCard({ task, onDragStart, onOpen, onMove, statusOp
 
   const handleClick = (e) => {
     // If the user moved more than 4px treat it as a drag, not a click
-    if (didDrag.current) { didDrag.current = false; return; }
+    if (didDrag.current) {
+      didDrag.current = false;
+      return;
+    }
     if (dragStartPos.current) {
       const dx = Math.abs(e.clientX - dragStartPos.current.x);
       const dy = Math.abs(e.clientY - dragStartPos.current.y);
@@ -74,14 +90,19 @@ export default function KanbanCard({ task, onDragStart, onOpen, onMove, statusOp
       onMouseDown={handleMouseDown}
       onDragStart={handleDragStart}
       onClick={handleClick}
-      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen?.(task); } }}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onOpen?.(task);
+        }
+      }}
       className={cn(
         'group relative cursor-grab select-none rounded-xl bg-[var(--kanban-card-bg)] p-6',
         'border-b-2 border-transparent',
         'shadow-[var(--ambient-shadow)] transition-all duration-150',
         'hover:-translate-y-px hover:bg-[var(--surface-card-hover)] hover:shadow-[var(--ambient-shadow-hover)] hover:border-b-[var(--accent)]/20',
         'active:cursor-grabbing active:opacity-60',
-        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]'
+        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]',
       )}
     >
       <div className="mb-3 flex items-center justify-between gap-3">
@@ -129,6 +150,13 @@ export default function KanbanCard({ task, onDragStart, onOpen, onMove, statusOp
         {task.title}
       </h3>
 
+      {(task.context || task.area) && (
+        <div className="mb-2 flex flex-wrap gap-1.5">
+          {task.context && <Badge variant="secondary">{task.context}</Badge>}
+          {task.area && <Badge variant="outline">{task.area}</Badge>}
+        </div>
+      )}
+
       <p className="mb-4 text-sm leading-relaxed text-[var(--text-secondary)] line-clamp-2">
         {task.description || task.project || 'No project'}
       </p>
@@ -136,19 +164,25 @@ export default function KanbanCard({ task, onDragStart, onOpen, onMove, statusOp
       <div className="flex items-center justify-between mt-auto">
         <span className="flex min-w-0 items-center gap-1.5 text-[var(--text-secondary)]">
           <FolderOpen size={14} className="shrink-0" />
-          <span className="truncate text-[11px] font-medium">{task.project || 'No project'}</span>
+          <span className="truncate text-[11px] font-medium">
+            {task.project || 'No project'}
+          </span>
         </span>
 
         {dateStr ? (
-          <span className={cn(
-            'flex shrink-0 items-center gap-1.5 text-[var(--text-secondary)]',
-            isOverdue && 'font-semibold text-[var(--error)]'
-          )}>
+          <span
+            className={cn(
+              'flex shrink-0 items-center gap-1.5 text-[var(--text-secondary)]',
+              isOverdue && 'font-semibold text-[var(--error)]',
+            )}
+          >
             <CalendarDays size={14} className="shrink-0" />
             <span className="text-[11px] font-medium">{dateStr}</span>
           </span>
         ) : (
-          <span className="shrink-0 text-[11px] italic text-[var(--text-muted)]">No date</span>
+          <span className="shrink-0 text-[11px] italic text-[var(--text-muted)]">
+            No date
+          </span>
         )}
       </div>
 

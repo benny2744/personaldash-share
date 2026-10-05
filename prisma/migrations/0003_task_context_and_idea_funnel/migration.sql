@@ -1,0 +1,12 @@
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS context TEXT;
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS area TEXT;
+
+CREATE INDEX IF NOT EXISTS tasks_context_idx ON tasks (context);
+CREATE INDEX IF NOT EXISTS tasks_area_idx ON tasks (area);
+ALTER TABLE ideas ADD COLUMN IF NOT EXISTS context TEXT;
+ALTER TABLE ideas ADD COLUMN IF NOT EXISTS confidence TEXT;
+ALTER TABLE ideas ADD COLUMN IF NOT EXISTS project TEXT;
+ALTER TABLE ideas ADD COLUMN IF NOT EXISTS reviewed_at TIMESTAMPTZ;
+
+CREATE INDEX IF NOT EXISTS ideas_context_idx ON ideas (context);
+CREATE INDEX IF NOT EXISTS ideas_project_idx ON ideas (project);

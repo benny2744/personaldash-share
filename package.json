@@ -9,7 +9,7 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "test": "node --import ./scripts/register-alias-hooks.mjs --test lib/caldav/parse.test.js lib/caldav/payload.test.js lib/agentAuth.test.js lib/gbrainSync.test.js lib/agents/hermesRuntime.test.js lib/hermes/api.test.js lib/hermes/gatewayClient.test.js lib/hermes/chatReducer.test.js lib/hermes/filePreview.test.js lib/hermes/attachments.test.js lib/hermes/transcriptSync.test.js lib/hermes/reconnect.test.js lib/hermes/panelState.test.js lib/hermes/sessionOrder.test.js lib/hermes/modelOptions.test.js lib/hermes/tierModels.test.js lib/hermes/speechText.test.js lib/hermes/transcriptDraft.test.js lib/hermes/voiceLease.test.js lib/hermes/voiceStream.test.js lib/hermes/voiceCapture.test.js lib/hermes/voicePlayback.test.js lib/hermes/voiceRecording.test.js lib/meetingPipeline/uploadHelpers.test.js lib/meetingPipeline/recover.test.js lib/meetingPipeline/asr.test.js lib/meetingPipeline/analysis.test.js lib/meetingPipeline/entityUpdates.test.js lib/meetingPipeline/vaultContext.test.js lib/meetingPipeline/asrRecovery.test.js lib/meetingPipeline/llm.test.js lib/cache/eviction.test.js lib/cache/localStore.test.js lib/cache/blobStore.test.js lib/cache/manager.test.js lib/cache/hermesCache.test.js lib/cache/dingTalkCache.test.js",
+    "test": "node --import ./scripts/register-alias-hooks.mjs --test lib/caldav/parse.test.js lib/caldav/payload.test.js lib/agentAuth.test.js lib/frontmatter.test.js lib/gbrainSync.test.js lib/agents/hermesRuntime.test.js lib/hermes/api.test.js lib/hermes/gatewayClient.test.js lib/hermes/chatReducer.test.js lib/hermes/resumeTarget.test.js lib/hermes/filePreview.test.js lib/hermes/markdownLinks.test.js lib/hermes/attachments.test.js lib/hermes/transcriptSync.test.js lib/hermes/reconnect.test.js lib/hermes/panelState.test.js lib/hermes/sessionOrder.test.js lib/hermes/modelOptions.test.js lib/hermes/tierModels.test.js lib/hermes/speechText.test.js lib/hermes/transcriptDraft.test.js lib/hermes/voiceLease.test.js lib/hermes/voiceStream.test.js lib/hermes/voiceCapture.test.js lib/hermes/voicePlayback.test.js lib/hermes/voiceRecording.test.js lib/meetingPipeline/uploadHelpers.test.js lib/meetingPipeline/recover.test.js lib/meetingPipeline/asr.test.js lib/meetingPipeline/analysis.test.js lib/meetingPipeline/entityUpdates.test.js lib/meetingPipeline/vaultContext.test.js lib/meetingPipeline/asrRecovery.test.js lib/meetingPipeline/llm.test.js lib/meetingPipeline/tasks.test.js lib/taskContext.test.js lib/cache/eviction.test.js lib/cache/localStore.test.js lib/cache/blobStore.test.js lib/cache/manager.test.js lib/cache/hermesCache.test.js lib/cache/dingTalkCache.test.js",
     "smoke:meetings": "node scripts/smoke-meeting-pipeline.mjs"
   },
   "engines": {
@@ -18,6 +18,9 @@
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1057.0",
     "@aws-sdk/s3-request-presigner": "^3.1057.0",
+    "@milkdown/crepe": "^7.21.1",
+    "@milkdown/kit": "^7.21.1",
+    "@milkdown/react": "^7.21.1",
     "@prisma/adapter-pg": "^7.8.0",
     "@prisma/client": "^7.8.0",
     "@serwist/next": "^9.5.11",

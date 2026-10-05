@@ -30,7 +30,7 @@ function runFfmpeg(args) {
     child.on('error', (error) => {
       reject(
         new Error(
-          `ffmpeg unavailable: ${error.message}. Install ffmpeg in the PersonalDash image.`,
+          `ffmpeg unavailable: ${error.message}. Install ffmpeg in the app image.`,
         ),
       );
     });

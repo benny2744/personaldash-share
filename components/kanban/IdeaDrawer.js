@@ -2,38 +2,60 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
+import dynamic from 'next/dynamic';
 import matter from 'gray-matter';
-import { ArrowUpRight, ChevronDown, Lightbulb, Target, TrendingUp, X } from 'lucide-react';
+import {
+  ArrowUpRight,
+  ChevronDown,
+  FolderOpen,
+  Gauge,
+  Lightbulb,
+  Target,
+  TrendingUp,
+  X,
+} from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { IDEA_STATUSES } from '@/lib/domain';
+import { IDEA_SCORES, IDEA_STATUSES, IDEA_STATUS_VARIANTS, TASK_CONTEXTS } from '@/lib/domain';
 import { wikilinksToMarkdown } from '@/lib/drawerUtils';
 
-const STATUS_VARIANT = {
-  backburner: 'status-backburner',
-  exploring: 'status-exploring',
-  inprogress: 'status-doing',
-  done: 'status-done',
-  abandoned: 'status-abandoned',
-};
+const MilkdownEditor = dynamic(
+  () => import('@/components/vault/MilkdownEditor'),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="flex items-center gap-2 py-2 text-sm text-[var(--text-muted)]">
+        <Skeleton className="h-4 w-3/4" />
+      </div>
+    ),
+  },
+);
 
-const EDITABLE_STATUS_OPTIONS = IDEA_STATUSES;
+function toDateInputValue(value) {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toISOString().slice(0, 10);
+}
 
 export default function IdeaDrawer({ idea, onClose, onIdeaUpdate }) {
   const [rawContent, setRawContent] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [metadataForm, setMetadataForm] = useState({
-    status: 'Backburner',
+    status: 'Captured',
+    context: '',
     domain: '',
+    project: '',
     impact: '',
+    confidence: '',
     effort: '',
+    ideaCreated: '',
+    reviewedAt: '',
   });
   const [savePending, setSavePending] = useState(false);
   const [saveError, setSaveError] = useState(null);
@@ -50,7 +72,10 @@ export default function IdeaDrawer({ idea, onClose, onIdeaUpdate }) {
     setError(null);
     setRawContent(null);
     fetch(`/api/vault/note?path=${encodeURIComponent(idea.note.filepath)}`)
-      .then((r) => { if (!r.ok) throw new Error('Note not found'); return r.json(); })
+      .then((r) => {
+        if (!r.ok) throw new Error('Note not found');
+        return r.json();
+      })
       .then((data) => setRawContent(data.content || ''))
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
@@ -59,10 +84,15 @@ export default function IdeaDrawer({ idea, onClose, onIdeaUpdate }) {
   useEffect(() => {
     if (!idea) return;
     setMetadataForm({
-      status: idea.status || 'Backburner',
+      status: idea.status || 'Captured',
+      context: idea.context || '',
       domain: idea.domain || '',
+      project: idea.project || '',
       impact: idea.impact || '',
+      confidence: idea.confidence || '',
       effort: idea.effort || '',
+      ideaCreated: toDateInputValue(idea.ideaCreated),
+      reviewedAt: toDateInputValue(idea.reviewedAt),
     });
     setSaveError(null);
     setSaveSuccess(false);
@@ -70,19 +100,26 @@ export default function IdeaDrawer({ idea, onClose, onIdeaUpdate }) {
   }, [idea]);
 
   useEffect(() => {
-    const handleKey = (e) => { if (e.key === 'Escape') onClose(); };
+    const handleKey = (e) => {
+      if (e.key === 'Escape') onClose();
+    };
     window.addEventListener('keydown', handleKey);
     return () => window.removeEventListener('keydown', handleKey);
   }, [onClose]);
 
-  useEffect(() => { drawerRef.current?.focus(); }, [idea?.id]);
+  useEffect(() => {
+    drawerRef.current?.focus();
+  }, [idea?.id]);
 
   if (!idea) return null;
 
   const parsedMatter = rawContent !== null ? matter(rawContent) : null;
-  const body = parsedMatter ? wikilinksToMarkdown(parsedMatter.content || '') : '';
-  const statusKey = (idea.status || 'backburner').toLowerCase().replace(/\s+/g, '');
-  const statusVariant = STATUS_VARIANT[statusKey] || 'secondary';
+  const body = parsedMatter
+    ? wikilinksToMarkdown(parsedMatter.content || '')
+    : '';
+  const statusVariant = IDEA_STATUS_VARIANTS[idea.status] || 'secondary';
+  const graduatedWithoutProject =
+    metadataForm.status === 'Graduated' && !metadataForm.project.trim();
 
   const handleMetadataChange = (field, value) => {
     setMetadataForm((previous) => ({ ...previous, [field]: value }));
@@ -98,9 +135,14 @@ export default function IdeaDrawer({ idea, onClose, onIdeaUpdate }) {
     try {
       const payload = {
         status: metadataForm.status,
+        context: metadataForm.context || null,
         domain: metadataForm.domain.trim() || null,
-        impact: metadataForm.impact.trim() || null,
-        effort: metadataForm.effort.trim() || null,
+        project: metadataForm.project.trim() || null,
+        impact: metadataForm.impact || null,
+        confidence: metadataForm.confidence || null,
+        effort: metadataForm.effort || null,
+        ideaCreated: metadataForm.ideaCreated || null,
+        reviewedAt: metadataForm.reviewedAt || null,
       };
       const response = await fetch(`/api/ideas/${idea.id}`, {
         method: 'PATCH',
@@ -108,7 +150,8 @@ export default function IdeaDrawer({ idea, onClose, onIdeaUpdate }) {
         body: JSON.stringify(payload),
       });
       if (!response.ok) {
-        throw new Error('Failed to save metadata');
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.error || 'Failed to save metadata');
       }
       const updatedIdea = await response.json();
       onIdeaUpdate?.(updatedIdea);
@@ -119,6 +162,26 @@ export default function IdeaDrawer({ idea, onClose, onIdeaUpdate }) {
       setSavePending(false);
     }
   };
+
+  const renderScoreSelect = (field, label) => (
+    <label className="space-y-1">
+      <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[var(--text-muted)]">
+        {label}
+      </span>
+      <Select
+        value={metadataForm[field]}
+        onChange={(event) => handleMetadataChange(field, event.target.value)}
+        className="h-8 text-xs"
+      >
+        <option value="">Unspecified</option>
+        {IDEA_SCORES.map((option) => (
+          <option key={option} value={option}>
+            {option}
+          </option>
+        ))}
+      </Select>
+    </label>
+  );
 
   return (
     <>
@@ -139,7 +202,7 @@ export default function IdeaDrawer({ idea, onClose, onIdeaUpdate }) {
           'glass-panel rounded-l-xl',
           'shadow-[-20px_0_60px_rgba(44,52,55,0.12)]',
           'outline-none',
-          'animate-slide-in-right'
+          'animate-slide-in-right',
         )}
       >
         <div className="flex shrink-0 items-start gap-3 px-5 py-4">
@@ -156,7 +219,7 @@ export default function IdeaDrawer({ idea, onClose, onIdeaUpdate }) {
           <div className="flex shrink-0 items-center gap-1.5">
             {idea.note?.filepath && (
               <Link
-                href={`/vault/${encodeURIComponent(idea.note.filepath)}`}
+                href={`/vault?path=${encodeURIComponent(idea.note.filepath)}`}
                 className="flex h-9 w-9 items-center justify-center rounded-md text-[var(--text-secondary)] transition hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] md:h-7 md:w-7"
                 title="Open full note"
               >
@@ -174,17 +237,32 @@ export default function IdeaDrawer({ idea, onClose, onIdeaUpdate }) {
         </div>
 
         <div className="flex shrink-0 flex-wrap items-center gap-2 px-5 py-3">
-          <Badge variant={statusVariant} dot>{idea.status || 'Backburner'}</Badge>
+          <Badge variant={statusVariant} dot>
+            {idea.status || 'Captured'}
+          </Badge>
+          {idea.context && <Badge variant="outline">{idea.context}</Badge>}
           {idea.domain && (
             <Badge variant="outline">
               <Lightbulb size={11} />
               {idea.domain}
             </Badge>
           )}
+          {idea.project && (
+            <Badge variant="outline">
+              <FolderOpen size={11} />
+              {idea.project}
+            </Badge>
+          )}
           {idea.impact && (
             <Badge variant="secondary">
               <TrendingUp size={11} />
               {idea.impact}
+            </Badge>
+          )}
+          {idea.confidence && (
+            <Badge variant="secondary">
+              <Gauge size={11} />
+              {idea.confidence}
             </Badge>
           )}
           {idea.effort && (
@@ -204,16 +282,22 @@ export default function IdeaDrawer({ idea, onClose, onIdeaUpdate }) {
                 onClick={() => setMetadataOpen((previous) => !previous)}
                 aria-expanded={metadataOpen}
               >
-                <h3 className="text-sm font-semibold text-[var(--text-primary)]">Front matter</h3>
+                <h3 className="text-sm font-semibold text-[var(--text-primary)]">
+                  Front matter
+                </h3>
                 <ChevronDown
                   size={16}
                   className={cn(
                     'text-[var(--text-secondary)] transition-transform',
-                    metadataOpen && 'rotate-180'
+                    metadataOpen && 'rotate-180',
                   )}
                 />
               </button>
-              <Button size="sm" onClick={handleSaveMetadata} disabled={savePending || !metadataOpen}>
+              <Button
+                size="sm"
+                onClick={handleSaveMetadata}
+                disabled={savePending || !metadataOpen}
+              >
                 {savePending ? 'Saving…' : 'Save'}
               </Button>
             </div>
@@ -221,28 +305,114 @@ export default function IdeaDrawer({ idea, onClose, onIdeaUpdate }) {
               <>
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <label className="space-y-1">
-                    <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[var(--text-muted)]">Status</span>
-                    <Select value={metadataForm.status} onChange={(event) => handleMetadataChange('status', event.target.value)} className="h-8 text-xs">
-                      {EDITABLE_STATUS_OPTIONS.map((option) => (
-                        <option key={option} value={option}>{option}</option>
+                    <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[var(--text-muted)]">
+                      Status
+                    </span>
+                    <Select
+                      value={metadataForm.status}
+                      onChange={(event) =>
+                        handleMetadataChange('status', event.target.value)
+                      }
+                      className="h-8 text-xs"
+                    >
+                      {IDEA_STATUSES.map((option) => (
+                        <option key={option} value={option}>
+                          {option}
+                        </option>
                       ))}
                     </Select>
                   </label>
                   <label className="space-y-1">
-                    <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[var(--text-muted)]">Domain</span>
-                    <Input value={metadataForm.domain} onChange={(event) => handleMetadataChange('domain', event.target.value)} placeholder="Domain" className="h-8 text-xs" />
+                    <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[var(--text-muted)]">
+                      Context
+                    </span>
+                    <Select
+                      value={metadataForm.context}
+                      onChange={(event) =>
+                        handleMetadataChange('context', event.target.value)
+                      }
+                      className="h-8 text-xs"
+                    >
+                      <option value="">Unclassified</option>
+                      {TASK_CONTEXTS.map((option) => (
+                        <option key={option} value={option}>
+                          {option}
+                        </option>
+                      ))}
+                    </Select>
                   </label>
                   <label className="space-y-1">
-                    <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[var(--text-muted)]">Impact</span>
-                    <Input value={metadataForm.impact} onChange={(event) => handleMetadataChange('impact', event.target.value)} placeholder="Impact" className="h-8 text-xs" />
+                    <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[var(--text-muted)]">
+                      Domain
+                    </span>
+                    <Input
+                      value={metadataForm.domain}
+                      onChange={(event) =>
+                        handleMetadataChange('domain', event.target.value)
+                      }
+                      placeholder="Domain"
+                      className="h-8 text-xs"
+                    />
                   </label>
                   <label className="space-y-1">
-                    <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[var(--text-muted)]">Effort</span>
-                    <Input value={metadataForm.effort} onChange={(event) => handleMetadataChange('effort', event.target.value)} placeholder="Effort" className="h-8 text-xs" />
+                    <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[var(--text-muted)]">
+                      Project (on graduation)
+                    </span>
+                    <Input
+                      value={metadataForm.project}
+                      onChange={(event) =>
+                        handleMetadataChange('project', event.target.value)
+                      }
+                      placeholder="Exact project note name"
+                      className="h-8 text-xs"
+                    />
+                  </label>
+                  {renderScoreSelect('impact', 'Impact')}
+                  {renderScoreSelect('confidence', 'Confidence')}
+                  {renderScoreSelect('effort', 'Effort')}
+                  <label className="space-y-1">
+                    <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[var(--text-muted)]">
+                      Created
+                    </span>
+                    <Input
+                      type="date"
+                      value={metadataForm.ideaCreated}
+                      onChange={(event) =>
+                        handleMetadataChange('ideaCreated', event.target.value)
+                      }
+                      className="h-8 text-xs"
+                    />
+                  </label>
+                  <label className="space-y-1">
+                    <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[var(--text-muted)]">
+                      Last reviewed
+                    </span>
+                    <Input
+                      type="date"
+                      value={metadataForm.reviewedAt}
+                      onChange={(event) =>
+                        handleMetadataChange('reviewedAt', event.target.value)
+                      }
+                      className="h-8 text-xs"
+                    />
                   </label>
                 </div>
-                {saveError && <p className="mt-2 text-xs text-[var(--error)]">{saveError}</p>}
-                {saveSuccess && <p className="mt-2 text-xs text-[var(--text-secondary)]">Saved.</p>}
+                {graduatedWithoutProject && (
+                  <p className="mt-2 text-xs text-[var(--priority-medium)]">
+                    Graduated ideas should link the project note they became —
+                    set Project before or after saving.
+                  </p>
+                )}
+                {saveError && (
+                  <p className="mt-2 text-xs text-[var(--error)]">
+                    {saveError}
+                  </p>
+                )}
+                {saveSuccess && (
+                  <p className="mt-2 text-xs text-[var(--text-secondary)]">
+                    Saved.
+                  </p>
+                )}
               </>
             )}
           </div>
@@ -257,15 +427,17 @@ export default function IdeaDrawer({ idea, onClose, onIdeaUpdate }) {
             </div>
           )}
           {error && (
-            <p className="text-sm text-[var(--error)]">Could not load note: {error}</p>
+            <p className="text-sm text-[var(--error)]">
+              Could not load note: {error}
+            </p>
           )}
           {!loading && !error && body && (
-            <div className="markdown-prose">
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>{body}</ReactMarkdown>
-            </div>
+            <MilkdownEditor content={body} readOnly compact />
           )}
           {!loading && !error && !body && !rawContent && (
-            <p className="text-sm text-[var(--text-muted)] italic">No note content attached.</p>
+            <p className="text-sm text-[var(--text-muted)] italic">
+              No note content attached.
+            </p>
           )}
         </div>
       </div>

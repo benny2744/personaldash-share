@@ -19,6 +19,13 @@ const variants = {
   'priority-high': 'bg-[color:color-mix(in_srgb,var(--error-container)_20%,transparent)] text-[var(--on-error-container)]',
   'priority-medium': 'bg-[color:color-mix(in_srgb,var(--priority-medium)_18%,transparent)] text-[var(--priority-medium)]',
   'priority-low': 'bg-[var(--surface-container-high)] text-[var(--text-secondary)]',
+  'idea-captured': 'bg-[color:color-mix(in_srgb,var(--idea-captured)_15%,transparent)] text-[var(--idea-captured)]',
+  'idea-incubating': 'bg-[color:color-mix(in_srgb,var(--idea-incubating)_15%,transparent)] text-[var(--idea-incubating)]',
+  'idea-exploring': 'bg-[color:color-mix(in_srgb,var(--idea-exploring)_15%,transparent)] text-[var(--idea-exploring)]',
+  'idea-graduated': 'bg-[color:color-mix(in_srgb,var(--idea-graduated)_15%,transparent)] text-[var(--idea-graduated)]',
+  'idea-shipped': 'bg-[color:color-mix(in_srgb,var(--idea-shipped)_15%,transparent)] text-[var(--idea-shipped)]',
+  'idea-retired': 'bg-[color:color-mix(in_srgb,var(--idea-retired)_15%,transparent)] text-[var(--idea-retired)]',
+  'idea-abandoned': 'bg-[color:color-mix(in_srgb,var(--idea-abandoned)_15%,transparent)] text-[var(--idea-abandoned)]',
 };
 
 export function Badge({ className, variant = 'default', dot = false, pill = false, children, ...props }) {

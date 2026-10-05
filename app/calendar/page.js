@@ -10,7 +10,7 @@ import { visibleRangeForView, toDateStr } from '@/lib/dates';
 import { isCaldavConfigured } from '@/lib/config';
 
 export const metadata = {
-  title: 'Calendar - PersonalDash',
+  title: 'Calendar - WorkDash',
 };
 
 export default async function CalendarPage() {

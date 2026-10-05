@@ -18,4 +18,4 @@ EXPOSE 3015
 
 USER nobody
 
-CMD ["sh", "-c", "uvicorn app.main:app --host ${HOST} --port ${PORT} --ws websockets --log-level info"]
+CMD ["sh", "-c", "uvicorn app.main:app --host ${HOST} --port ${PORT} --ws websockets --ws-ping-interval 20 --ws-ping-timeout 90 --log-level info"]

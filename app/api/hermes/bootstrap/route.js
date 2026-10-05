@@ -14,7 +14,7 @@ export async function GET() {
     return NextResponse.json(
       {
         error:
-          'HERMES_DASHBOARD_SESSION_TOKEN is not configured. Set it in ~/.hermes/.env and restart hermes-dashboard + personaldash.',
+          'HERMES_DASHBOARD_SESSION_TOKEN is not configured. Set it in ~/.hermes/.env and restart hermes-dashboard + the dashboard app.',
         configured: false,
       },
       {

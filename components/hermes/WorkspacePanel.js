@@ -23,6 +23,7 @@ import {
   isTextPath,
 } from '@/lib/hermes/filePreview';
 import { cn } from '@/lib/utils';
+import SessionStatsPanel from './SessionStatsPanel';
 
 function stripHtml(str) {
   if (!str) return str;
@@ -69,7 +70,7 @@ function FileViewer({ preview, onBack, onDownload }) {
       isTextPath(preview.path || preview.name));
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
+    <div className="flex min-h-0 flex-1 basis-0 flex-col">
       <div className="flex items-center gap-1 border-b border-[var(--border)] px-3 py-2">
         <Button
           size="icon"
@@ -128,6 +129,12 @@ export default function WorkspacePanel({
   artifacts,
   todos,
   runtime,
+  usage,
+  usageBaseline,
+  coldStats,
+  running,
+  statsOpen,
+  onStatsToggle,
   className,
   style,
 }) {
@@ -216,7 +223,7 @@ export default function WorkspacePanel({
         className,
       )}
     >
-      <div className="border-b border-[var(--border)] p-3">
+      <div className="shrink-0 border-b border-[var(--border)] p-3">
         <Tabs>
           <TabsList className="w-full justify-between">
             {[
@@ -244,7 +251,7 @@ export default function WorkspacePanel({
           onDownload={downloadPreview}
         />
       ) : (
-        <ScrollArea className="min-h-0 flex-1 p-3">
+        <ScrollArea className="min-h-0 flex-1 basis-0 p-3">
           {tab === 'files' ? (
             <div className="space-y-3">
               <div className="flex items-center gap-2">
@@ -368,6 +375,15 @@ export default function WorkspacePanel({
           ) : null}
         </ScrollArea>
       )}
+
+      <SessionStatsPanel
+        open={statsOpen}
+        onToggle={onStatsToggle}
+        usage={usage}
+        baseline={usageBaseline}
+        cold={coldStats}
+        running={running}
+      />
     </aside>
   );
 }

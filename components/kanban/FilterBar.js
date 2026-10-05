@@ -18,11 +18,15 @@ export default function FilterBar({
 }) {
   const [mobileOpen, setMobileOpen] = useState(false);
 
-  const resultLabel = useMemo(() => `${resultCount}/${totalCount}`, [resultCount, totalCount]);
-  const mobileFilterLabel = activeFilterCount > 0 ? `Filters (${activeFilterCount})` : 'Filters';
+  const resultLabel = useMemo(
+    () => `${resultCount}/${totalCount}`,
+    [resultCount, totalCount],
+  );
+  const mobileFilterLabel =
+    activeFilterCount > 0 ? `Filters (${activeFilterCount})` : 'Filters';
 
   return (
-    <div className="rounded-lg bg-[var(--surface-container-low)] p-2">
+    <div className="relative shrink-0 rounded-lg bg-[var(--surface-container-low)] p-2">
       <div className="hidden flex-wrap items-center gap-2 md:flex">
         <span className="px-1 text-xs font-semibold uppercase tracking-[0.08em] text-[var(--text-muted)]">
           Filters
@@ -41,7 +45,9 @@ export default function FilterBar({
         >
           Clear
         </Button>
-        <span className="text-[0.7rem] text-[var(--text-muted)]">{resultLabel}</span>
+        <span className="text-[0.7rem] text-[var(--text-muted)]">
+          {resultLabel}
+        </span>
       </div>
 
       <div className="space-y-2 md:hidden">
@@ -64,7 +70,9 @@ export default function FilterBar({
               className={cn('transition-transform', mobileOpen && 'rotate-180')}
             />
           </button>
-          <span className="text-[0.7rem] text-[var(--text-muted)]">{resultLabel}</span>
+          <span className="text-[0.7rem] text-[var(--text-muted)]">
+            {resultLabel}
+          </span>
         </div>
         {mobileOpen && (
           <div className="space-y-2">

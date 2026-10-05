@@ -22,6 +22,7 @@ import {
   playbackButtonLabel,
   playbackButtonState,
 } from '@/lib/hermes/voicePlayback';
+import { vaultViewerHref } from '@/lib/hermes/markdownLinks';
 import { cn } from '@/lib/utils';
 
 function attachmentIcon(file) {
@@ -43,6 +44,17 @@ function attachmentIcon(file) {
  * User / assistant answer bubble.
  * Tool/reasoning activity is rendered separately via WorkTrace.
  */
+
+const markdownComponents = {
+  a({ href, children, title }) {
+    return (
+      <a href={vaultViewerHref(href)} title={title}>
+        {children}
+      </a>
+    );
+  },
+};
+
 export default function MessageBubble({
   message,
   playbackActiveId = null,
@@ -153,10 +165,15 @@ export default function MessageBubble({
         </div>
 
         {isUser ? (
-          <div className="whitespace-pre-wrap break-words">{message.content}</div>
+          <div className="whitespace-pre-wrap break-words">
+            {message.content}
+          </div>
         ) : (
           <div className="prose prose-sm max-w-none break-words prose-p:my-2 prose-pre:bg-[var(--surface-container-low)] prose-pre:text-[var(--text-primary)]">
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>
+            <ReactMarkdown
+              remarkPlugins={[remarkGfm]}
+              components={markdownComponents}
+            >
               {message.content || (message.streaming ? '…' : '')}
             </ReactMarkdown>
           </div>
@@ -168,7 +185,8 @@ export default function MessageBubble({
           </p>
         ) : null}
 
-        {Array.isArray(message.attachments) && message.attachments.length > 0 ? (
+        {Array.isArray(message.attachments) &&
+        message.attachments.length > 0 ? (
           <div className="mt-2 flex flex-wrap gap-2">
             {message.attachments.map((file) => {
               const Icon = attachmentIcon(file);

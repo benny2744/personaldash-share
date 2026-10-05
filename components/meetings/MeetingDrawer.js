@@ -2,8 +2,7 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
+import dynamic from 'next/dynamic';
 import matter from 'gray-matter';
 import { ArrowUpRight, ChevronDown, Users, X } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
@@ -14,9 +13,31 @@ import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { MEETING_TYPES } from '@/lib/domain';
-import { parseCsv, toCsv, toDateInputValue, wikilinksToMarkdown } from '@/lib/drawerUtils';
+import {
+  parseCsv,
+  toCsv,
+  toDateInputValue,
+  wikilinksToMarkdown,
+} from '@/lib/drawerUtils';
 
-export default function MeetingDrawer({ meeting, onClose, onMeetingUpdate, readOnly = false }) {
+const MilkdownEditor = dynamic(
+  () => import('@/components/vault/MilkdownEditor'),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="flex items-center gap-2 py-2 text-sm text-[var(--text-muted)]">
+        <Skeleton className="h-4 w-3/4" />
+      </div>
+    ),
+  },
+);
+
+export default function MeetingDrawer({
+  meeting,
+  onClose,
+  onMeetingUpdate,
+  readOnly = false,
+}) {
   const [rawContent, setRawContent] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -32,6 +53,7 @@ export default function MeetingDrawer({ meeting, onClose, onMeetingUpdate, readO
   const [savePending, setSavePending] = useState(false);
   const [saveError, setSaveError] = useState(null);
   const [saveSuccess, setSaveSuccess] = useState(false);
+  const [unresolvedAttendees, setUnresolvedAttendees] = useState([]);
   const [metadataOpen, setMetadataOpen] = useState(false);
   const drawerRef = useRef(null);
   const hasKnownMeetingType = MEETING_TYPES.includes(metadataForm.meetingType);
@@ -67,6 +89,7 @@ export default function MeetingDrawer({ meeting, onClose, onMeetingUpdate, readO
     });
     setSaveError(null);
     setSaveSuccess(false);
+    setUnresolvedAttendees([]);
     setMetadataOpen(false);
   }, [meeting]);
 
@@ -85,7 +108,9 @@ export default function MeetingDrawer({ meeting, onClose, onMeetingUpdate, readO
   if (!meeting) return null;
 
   const parsedMatter = rawContent !== null ? matter(rawContent) : null;
-  const body = parsedMatter ? wikilinksToMarkdown(parsedMatter.content || '') : '';
+  const body = parsedMatter
+    ? wikilinksToMarkdown(parsedMatter.content || '')
+    : '';
 
   const handleMetadataChange = (field, value) => {
     setMetadataForm((prev) => ({ ...prev, [field]: value }));
@@ -117,6 +142,7 @@ export default function MeetingDrawer({ meeting, onClose, onMeetingUpdate, readO
         throw new Error('Failed to save metadata');
       }
       const updatedMeeting = await response.json();
+      setUnresolvedAttendees(updatedMeeting.unresolvedAttendees || []);
       onMeetingUpdate?.(updatedMeeting);
       setSaveSuccess(true);
     } catch (err) {
@@ -145,7 +171,7 @@ export default function MeetingDrawer({ meeting, onClose, onMeetingUpdate, readO
           'glass-panel rounded-l-xl',
           'shadow-[-20px_0_60px_rgba(44,52,55,0.12)]',
           'outline-none',
-          'animate-slide-in-right'
+          'animate-slide-in-right',
         )}
       >
         <div className="flex shrink-0 items-start gap-3 px-5 py-4">
@@ -162,7 +188,7 @@ export default function MeetingDrawer({ meeting, onClose, onMeetingUpdate, readO
           <div className="flex shrink-0 items-center gap-1.5">
             {meeting.note?.filepath && (
               <Link
-                href={`/vault/${encodeURIComponent(meeting.note.filepath)}`}
+                href={`/vault?path=${encodeURIComponent(meeting.note.filepath)}`}
                 className="flex h-9 w-9 items-center justify-center rounded-md text-[var(--text-secondary)] transition hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] md:h-7 md:w-7"
                 title="Open full note"
               >
@@ -180,11 +206,14 @@ export default function MeetingDrawer({ meeting, onClose, onMeetingUpdate, readO
         </div>
 
         <div className="flex shrink-0 flex-wrap items-center gap-2 px-5 py-3">
-          {meeting.meetingType && <Badge variant="secondary">{meeting.meetingType}</Badge>}
+          {meeting.meetingType && (
+            <Badge variant="secondary">{meeting.meetingType}</Badge>
+          )}
           {!!meeting.attendees?.length && (
             <Badge variant="outline">
               <Users size={11} />
-              {meeting.attendees.length} attendee{meeting.attendees.length === 1 ? '' : 's'}
+              {meeting.attendees.length} attendee
+              {meeting.attendees.length === 1 ? '' : 's'}
             </Badge>
           )}
           {meeting.meetingDate && (
@@ -204,13 +233,22 @@ export default function MeetingDrawer({ meeting, onClose, onMeetingUpdate, readO
                   onClick={() => setMetadataOpen((prev) => !prev)}
                   aria-expanded={metadataOpen}
                 >
-                  <h3 className="text-sm font-semibold text-[var(--text-primary)]">Front matter</h3>
+                  <h3 className="text-sm font-semibold text-[var(--text-primary)]">
+                    Front matter
+                  </h3>
                   <ChevronDown
                     size={16}
-                    className={cn('text-[var(--text-secondary)] transition-transform', metadataOpen && 'rotate-180')}
+                    className={cn(
+                      'text-[var(--text-secondary)] transition-transform',
+                      metadataOpen && 'rotate-180',
+                    )}
                   />
                 </button>
-                <Button size="sm" onClick={handleSaveMetadata} disabled={savePending || !metadataOpen}>
+                <Button
+                  size="sm"
+                  onClick={handleSaveMetadata}
+                  disabled={savePending || !metadataOpen}
+                >
                   {savePending ? 'Saving…' : 'Save'}
                 </Button>
               </div>
@@ -218,44 +256,132 @@ export default function MeetingDrawer({ meeting, onClose, onMeetingUpdate, readO
                 <>
                   <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                     <label className="space-y-1">
-                      <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[var(--text-muted)]">Type</span>
-                      <Select value={metadataForm.meetingType} onChange={(event) => handleMetadataChange('meetingType', event.target.value)} className="h-8 text-xs">
+                      <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[var(--text-muted)]">
+                        Type
+                      </span>
+                      <Select
+                        value={metadataForm.meetingType}
+                        onChange={(event) =>
+                          handleMetadataChange(
+                            'meetingType',
+                            event.target.value,
+                          )
+                        }
+                        className="h-8 text-xs"
+                      >
                         <option value="">Select type</option>
                         {metadataForm.meetingType && !hasKnownMeetingType && (
-                          <option value={metadataForm.meetingType}>{metadataForm.meetingType} (legacy)</option>
+                          <option value={metadataForm.meetingType}>
+                            {metadataForm.meetingType} (legacy)
+                          </option>
                         )}
                         {MEETING_TYPES.map((option) => (
-                          <option key={option} value={option}>{option}</option>
+                          <option key={option} value={option}>
+                            {option}
+                          </option>
                         ))}
                       </Select>
                     </label>
                     <label className="space-y-1">
-                      <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[var(--text-muted)]">Date</span>
-                      <Input type="date" value={metadataForm.meetingDate} onChange={(event) => handleMetadataChange('meetingDate', event.target.value)} className="h-8 text-xs" />
+                      <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[var(--text-muted)]">
+                        Date
+                      </span>
+                      <Input
+                        type="date"
+                        value={metadataForm.meetingDate}
+                        onChange={(event) =>
+                          handleMetadataChange(
+                            'meetingDate',
+                            event.target.value,
+                          )
+                        }
+                        className="h-8 text-xs"
+                      />
                     </label>
                     <label className="space-y-1 sm:col-span-2">
-                      <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[var(--text-muted)]">Attendees</span>
-                      <Input value={metadataForm.attendees} onChange={(event) => handleMetadataChange('attendees', event.target.value)} placeholder="Comma-separated wiki targets" className="h-8 text-xs" />
+                      <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[var(--text-muted)]">
+                        Attendees
+                      </span>
+                      <Input
+                        value={metadataForm.attendees}
+                        onChange={(event) =>
+                          handleMetadataChange('attendees', event.target.value)
+                        }
+                        placeholder="Comma-separated names (matched to people notes)"
+                        className="h-8 text-xs"
+                      />
                     </label>
                     <label className="space-y-1">
-                      <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[var(--text-muted)]">Project</span>
-                      <Input value={metadataForm.project} onChange={(event) => handleMetadataChange('project', event.target.value)} placeholder="Project wiki target" className="h-8 text-xs" />
+                      <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[var(--text-muted)]">
+                        Project
+                      </span>
+                      <Input
+                        value={metadataForm.project}
+                        onChange={(event) =>
+                          handleMetadataChange('project', event.target.value)
+                        }
+                        placeholder="Project wiki target"
+                        className="h-8 text-xs"
+                      />
                     </label>
                     <label className="space-y-1">
-                      <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[var(--text-muted)]">Area</span>
-                      <Input value={metadataForm.area} onChange={(event) => handleMetadataChange('area', event.target.value)} placeholder="Area wiki target" className="h-8 text-xs" />
+                      <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[var(--text-muted)]">
+                        Area
+                      </span>
+                      <Input
+                        value={metadataForm.area}
+                        onChange={(event) =>
+                          handleMetadataChange('area', event.target.value)
+                        }
+                        placeholder="Area wiki target"
+                        className="h-8 text-xs"
+                      />
                     </label>
                     <label className="space-y-1 sm:col-span-2">
-                      <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[var(--text-muted)]">Action Items</span>
-                      <Input value={metadataForm.actionItems} onChange={(event) => handleMetadataChange('actionItems', event.target.value)} placeholder="Comma-separated wiki targets" className="h-8 text-xs" />
+                      <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[var(--text-muted)]">
+                        Action Items
+                      </span>
+                      <Input
+                        value={metadataForm.actionItems}
+                        onChange={(event) =>
+                          handleMetadataChange(
+                            'actionItems',
+                            event.target.value,
+                          )
+                        }
+                        placeholder="Comma-separated wiki targets"
+                        className="h-8 text-xs"
+                      />
                     </label>
                     <label className="space-y-1 sm:col-span-2">
-                      <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[var(--text-muted)]">Decisions</span>
-                      <Textarea value={metadataForm.decisions} onChange={(event) => handleMetadataChange('decisions', event.target.value)} className="min-h-20 text-xs" />
+                      <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[var(--text-muted)]">
+                        Decisions
+                      </span>
+                      <Textarea
+                        value={metadataForm.decisions}
+                        onChange={(event) =>
+                          handleMetadataChange('decisions', event.target.value)
+                        }
+                        className="min-h-20 text-xs"
+                      />
                     </label>
                   </div>
-                  {saveError && <p className="mt-2 text-xs text-[var(--error)]">{saveError}</p>}
-                  {saveSuccess && <p className="mt-2 text-xs text-[var(--text-secondary)]">Saved.</p>}
+                  {saveError && (
+                    <p className="mt-2 text-xs text-[var(--error)]">
+                      {saveError}
+                    </p>
+                  )}
+                  {saveSuccess && (
+                    <p className="mt-2 text-xs text-[var(--text-secondary)]">
+                      Saved.
+                    </p>
+                  )}
+                  {saveSuccess && unresolvedAttendees.length > 0 && (
+                    <p className="mt-1 text-xs text-[var(--text-secondary)]">
+                      No people note found for {unresolvedAttendees.join(', ')}{' '}
+                      — sent to Link Review.
+                    </p>
+                  )}
                 </>
               )}
             </div>
@@ -271,15 +397,17 @@ export default function MeetingDrawer({ meeting, onClose, onMeetingUpdate, readO
             </div>
           )}
           {error && (
-            <p className="text-sm text-[var(--error)]">Could not load note: {error}</p>
+            <p className="text-sm text-[var(--error)]">
+              Could not load note: {error}
+            </p>
           )}
           {!loading && !error && body && (
-            <div className="markdown-prose">
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>{body}</ReactMarkdown>
-            </div>
+            <MilkdownEditor content={body} readOnly compact />
           )}
           {!loading && !error && !body && !rawContent && (
-            <p className="text-sm text-[var(--text-muted)] italic">No note content attached.</p>
+            <p className="text-sm text-[var(--text-muted)] italic">
+              No note content attached.
+            </p>
           )}
         </div>
       </div>

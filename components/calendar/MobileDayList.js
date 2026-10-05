@@ -98,7 +98,7 @@ export default function MobileDayList({
                 >
                   <Badge
                     variant={priorityVariant(task.priority)}
-                    className="block max-w-full truncate"
+                    className="line-clamp-2 max-w-full break-words text-left"
                   >
                     {task.title}
                   </Badge>
@@ -113,7 +113,7 @@ export default function MobileDayList({
                 >
                   <Badge
                     variant="outline"
-                    className="block max-w-full truncate"
+                    className="line-clamp-2 max-w-full break-words text-left"
                   >
                     {meeting.title}
                   </Badge>
@@ -128,7 +128,7 @@ export default function MobileDayList({
                 >
                   <Badge
                     variant="default"
-                    className="block max-w-full truncate bg-[color:color-mix(in_srgb,#38bdf8_22%,transparent)] text-[color:#075985]"
+                    className="line-clamp-2 max-w-full break-words text-left bg-[color:color-mix(in_srgb,#38bdf8_22%,transparent)] text-[color:#075985]"
                   >
                     {event.allDay
                       ? event.summary

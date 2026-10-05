@@ -2,7 +2,14 @@ import { NextResponse } from 'next/server';
 import prisma from '@/lib/db';
 import { enqueueWriteBack } from '@/lib/syncWorker';
 import { fileExists } from '@/lib/vault';
-import { TASK_PRIORITIES, TASK_STATUSES, errorResponse, isAllowed, parseDate } from '@/lib/api';
+import {
+  TASK_CONTEXTS,
+  TASK_PRIORITIES,
+  TASK_STATUSES,
+  errorResponse,
+  isAllowed,
+  parseDate,
+} from '@/lib/api';
 
 export const dynamic = 'force-dynamic';
 
@@ -22,7 +29,10 @@ export async function GET(request, { params }) {
     return NextResponse.json(task);
   } catch (error) {
     console.error('Error fetching task:', error);
-    return NextResponse.json({ error: 'Failed to fetch task' }, { status: 500 });
+    return NextResponse.json(
+      { error: 'Failed to fetch task' },
+      { status: 500 },
+    );
   }
 }
 
@@ -54,12 +64,26 @@ export async function PATCH(request, { params }) {
         }),
       ]);
       return NextResponse.json(
-        { error: 'Backing note file is missing; stale task removed', stale: true },
+        {
+          error: 'Backing note file is missing; stale task removed',
+          stale: true,
+        },
         { status: 410 },
       );
     }
 
-    const { status, whenDate, priority, project, domain, people, courses } = updates;
+    const {
+      status,
+      whenDate,
+      priority,
+      context,
+      project,
+      area,
+      domain,
+      people,
+      courses,
+      tags,
+    } = updates;
 
     // Build update payload for DB and writeback
     const writebackUpdates = {};
@@ -72,18 +96,34 @@ export async function PATCH(request, { params }) {
       }
       writebackUpdates.status = status;
       dbUpdates.status = status;
-      events.push({ eventType: 'status_change', field: 'status', oldValue: task.status || '', newValue: status });
+      events.push({
+        eventType: 'status_change',
+        field: 'status',
+        oldValue: task.status || '',
+        newValue: status,
+      });
     }
 
     if (whenDate !== undefined) {
-      const parsedDate = whenDate ? parseDate(whenDate, 'whenDate') : { value: null };
+      const parsedDate = whenDate
+        ? parseDate(whenDate, 'whenDate')
+        : { value: null };
       if (parsedDate.error) return errorResponse(parsedDate.error, 400);
-      const incomingDate = parsedDate.value ? parsedDate.value.toISOString() : null;
-      const currentDate = task.whenDate ? new Date(task.whenDate).toISOString() : null;
+      const incomingDate = parsedDate.value
+        ? parsedDate.value.toISOString()
+        : null;
+      const currentDate = task.whenDate
+        ? new Date(task.whenDate).toISOString()
+        : null;
       if (incomingDate !== currentDate) {
         writebackUpdates.when = whenDate;
         dbUpdates.whenDate = parsedDate.value;
-        events.push({ eventType: 'date_change', field: 'when_date', oldValue: task.whenDate ? task.whenDate.toISOString() : '', newValue: whenDate });
+        events.push({
+          eventType: 'date_change',
+          field: 'when_date',
+          oldValue: task.whenDate ? task.whenDate.toISOString() : '',
+          newValue: whenDate,
+        });
       }
     }
 
@@ -93,27 +133,81 @@ export async function PATCH(request, { params }) {
       }
       writebackUpdates.priority = priority;
       dbUpdates.priority = priority;
-      events.push({ eventType: 'priority_change', field: 'priority', oldValue: task.priority || '', newValue: priority });
+      events.push({
+        eventType: 'priority_change',
+        field: 'priority',
+        oldValue: task.priority || '',
+        newValue: priority,
+      });
+    }
+
+    if (context !== undefined) {
+      if (
+        context !== null &&
+        context !== '' &&
+        !isAllowed(context, TASK_CONTEXTS)
+      ) {
+        return errorResponse('Invalid task context', 400);
+      }
+      const normalizedContext = context || null;
+      if (normalizedContext !== (task.context || null)) {
+        writebackUpdates.context = normalizedContext;
+        dbUpdates.context = normalizedContext;
+        events.push({
+          eventType: 'metadata_change',
+          field: 'context',
+          oldValue: task.context || '',
+          newValue: normalizedContext || '',
+        });
+      }
     }
 
     if (project !== undefined && project !== task.project) {
       writebackUpdates.project = project ?? null;
       dbUpdates.project = project;
-      events.push({ eventType: 'project_change', field: 'project', oldValue: task.project || '', newValue: project });
+      events.push({
+        eventType: 'project_change',
+        field: 'project',
+        oldValue: task.project || '',
+        newValue: project,
+      });
+    }
+
+    if (area !== undefined && area !== task.area) {
+      writebackUpdates.area = area ?? null;
+      dbUpdates.area = area;
+      events.push({
+        eventType: 'metadata_change',
+        field: 'area',
+        oldValue: task.area || '',
+        newValue: area || '',
+      });
     }
 
     if (domain !== undefined && domain !== task.domain) {
       writebackUpdates.domain = domain ?? null;
       dbUpdates.domain = domain;
-      events.push({ eventType: 'domain_change', field: 'domain', oldValue: task.domain || '', newValue: domain });
+      events.push({
+        eventType: 'domain_change',
+        field: 'domain',
+        oldValue: task.domain || '',
+        newValue: domain,
+      });
     }
 
     if (people !== undefined) {
       if (!Array.isArray(people)) {
-        return NextResponse.json({ error: 'people must be an array' }, { status: 400 });
+        return NextResponse.json(
+          { error: 'people must be an array' },
+          { status: 400 },
+        );
       }
-      const normalizedPeople = people.map((item) => String(item).trim()).filter(Boolean);
-      if (JSON.stringify(normalizedPeople) !== JSON.stringify(task.people || [])) {
+      const normalizedPeople = people
+        .map((item) => String(item).trim())
+        .filter(Boolean);
+      if (
+        JSON.stringify(normalizedPeople) !== JSON.stringify(task.people || [])
+      ) {
         writebackUpdates.people = normalizedPeople;
         dbUpdates.people = normalizedPeople;
         events.push({
@@ -127,10 +221,17 @@ export async function PATCH(request, { params }) {
 
     if (courses !== undefined) {
       if (!Array.isArray(courses)) {
-        return NextResponse.json({ error: 'courses must be an array' }, { status: 400 });
+        return NextResponse.json(
+          { error: 'courses must be an array' },
+          { status: 400 },
+        );
       }
-      const normalizedCourses = courses.map((item) => String(item).trim()).filter(Boolean);
-      if (JSON.stringify(normalizedCourses) !== JSON.stringify(task.courses || [])) {
+      const normalizedCourses = courses
+        .map((item) => String(item).trim())
+        .filter(Boolean);
+      if (
+        JSON.stringify(normalizedCourses) !== JSON.stringify(task.courses || [])
+      ) {
         writebackUpdates.courses = normalizedCourses;
         dbUpdates.courses = normalizedCourses;
         events.push({
@@ -142,9 +243,42 @@ export async function PATCH(request, { params }) {
       }
     }
 
+    if (tags !== undefined) {
+      if (!Array.isArray(tags)) {
+        return NextResponse.json(
+          { error: 'tags must be an array' },
+          { status: 400 },
+        );
+      }
+      const normalizedTags = [
+        ...new Set(tags.map((item) => String(item).trim()).filter(Boolean)),
+      ];
+      if (!normalizedTags.includes('type/task'))
+        normalizedTags.unshift('type/task');
+      if (JSON.stringify(normalizedTags) !== JSON.stringify(task.tags || [])) {
+        writebackUpdates.tags = normalizedTags;
+        dbUpdates.tags = normalizedTags;
+        events.push({
+          eventType: 'metadata_change',
+          field: 'tags',
+          oldValue: JSON.stringify(task.tags || []),
+          newValue: JSON.stringify(normalizedTags),
+        });
+      }
+    }
+
     if (Object.keys(dbUpdates).length === 0) {
       // Nothing changed
-      return NextResponse.json(task);
+      return NextResponse.json({
+        ...task,
+        note: task.note
+          ? {
+              filepath: task.note.filepath,
+              fileModifiedAt: task.note.fileModifiedAt,
+            }
+          : null,
+        fileModifiedAt: task.note?.fileModifiedAt ?? null,
+      });
     }
 
     if (Object.keys(writebackUpdates).length > 0) {
@@ -155,7 +289,10 @@ export async function PATCH(request, { params }) {
       });
       if (!syncResult?.success) {
         return NextResponse.json(
-          { error: syncResult?.error || 'Write-back failed', conflict: Boolean(syncResult?.conflict) },
+          {
+            error: syncResult?.error || 'Write-back failed',
+            conflict: Boolean(syncResult?.conflict),
+          },
           { status: syncResult?.conflict ? 409 : 500 },
         );
       }
@@ -190,12 +327,26 @@ export async function PATCH(request, { params }) {
         : []),
     ]);
 
+    const refreshedNote = await prisma.note.findUnique({
+      where: { id: updatedTask.noteId },
+      select: { frontmatterJson: true },
+    });
+
     return NextResponse.json({
       ...updatedTask,
+      note: updatedTask.note
+        ? {
+            ...updatedTask.note,
+            frontmatterJson: refreshedNote?.frontmatterJson,
+          }
+        : updatedTask.note,
       fileModifiedAt: updatedTask.note?.fileModifiedAt ?? null,
     });
   } catch (error) {
     console.error(`Error updating task ${id}:`, error);
-    return NextResponse.json({ error: 'Failed to update task' }, { status: 500 });
+    return NextResponse.json(
+      { error: 'Failed to update task' },
+      { status: 500 },
+    );
   }
 }

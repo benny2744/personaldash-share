@@ -1,7 +1,15 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/db';
 import { enqueueWriteBack } from '@/lib/syncWorker';
-import { IDEA_SCORES, IDEA_STATUSES, errorResponse, isAllowed } from '@/lib/api';
+import { fileExists } from '@/lib/vault';
+import {
+  IDEA_SCORES,
+  IDEA_STATUSES,
+  TASK_CONTEXTS,
+  errorResponse,
+  isAllowed,
+  parseDate,
+} from '@/lib/api';
 
 export const dynamic = 'force-dynamic';
 
@@ -25,6 +33,63 @@ export async function GET(request, { params }) {
   }
 }
 
+/**
+ * Validate an enum-backed nullable score (Impact/Confidence/Effort) and build
+ * write-back + DB updates when it changed.
+ */
+function applyScoreField({
+  incoming,
+  current,
+  field,
+  label,
+  writebackUpdates,
+  dbUpdates,
+}) {
+  if (incoming === undefined || incoming === current) return null;
+  if (
+    incoming !== null &&
+    incoming !== '' &&
+    !isAllowed(incoming, IDEA_SCORES)
+  ) {
+    return errorResponse(`Invalid idea ${label}`, 400);
+  }
+  const normalized = incoming || null;
+  writebackUpdates[field] = normalized;
+  dbUpdates[field] = normalized;
+  return null;
+}
+
+/**
+ * Validate a date field (Created/Reviewed) sent as YYYY-MM-DD (or null to
+ * clear) and build write-back + DB updates when it changed.
+ */
+function applyDateField({
+  incoming,
+  current,
+  field,
+  label,
+  writebackUpdates,
+  dbUpdates,
+}) {
+  if (incoming === undefined) return null;
+  let incomingDate = null;
+  if (incoming) {
+    const parsed = parseDate(incoming, label);
+    if (parsed.error) return errorResponse(parsed.error, 400);
+    incomingDate = parsed.value;
+  }
+  const currentDate = current ? new Date(current) : null;
+  const sameDay =
+    incomingDate && currentDate
+      ? incomingDate.toISOString().slice(0, 10) ===
+        currentDate.toISOString().slice(0, 10)
+      : !incomingDate && !currentDate;
+  if (sameDay) return null;
+  writebackUpdates[field] = incoming || null;
+  dbUpdates[field] = incomingDate;
+  return null;
+}
+
 export async function PATCH(request, { params }) {
   const { id } = await params;
   let updates;
@@ -44,7 +109,36 @@ export async function PATCH(request, { params }) {
       return NextResponse.json({ error: 'Idea not found' }, { status: 404 });
     }
 
-    const { status, domain, impact, effort } = updates;
+    if (!(await fileExists(idea.note.filepath))) {
+      await prisma.$transaction([
+        prisma.idea.deleteMany({ where: { id: idea.id } }),
+        prisma.note.update({
+          where: { id: idea.note.id },
+          data: { deletedAt: new Date() },
+        }),
+      ]);
+      return NextResponse.json(
+        {
+          error: 'Backing note file is missing; stale idea removed',
+          stale: true,
+        },
+        { status: 410 },
+      );
+    }
+
+    const {
+      status,
+      domain,
+      context,
+      impact,
+      confidence,
+      effort,
+      project,
+      ideaCreated,
+      reviewedAt,
+      notesSummary,
+      tags,
+    } = updates;
 
     const writebackUpdates = {};
     const dbUpdates = {};
@@ -62,20 +156,96 @@ export async function PATCH(request, { params }) {
       dbUpdates.domain = domain;
     }
 
-    if (impact !== undefined && impact !== idea.impact) {
-      if (impact !== null && impact !== '' && !isAllowed(impact, IDEA_SCORES)) {
-        return errorResponse('Invalid idea impact', 400);
+    if (context !== undefined && (context || null) !== (idea.context || null)) {
+      if (
+        context !== null &&
+        context !== '' &&
+        !isAllowed(context, TASK_CONTEXTS)
+      ) {
+        return errorResponse('Invalid idea context', 400);
       }
-      writebackUpdates.impact = impact ?? null;
-      dbUpdates.impact = impact;
+      const normalizedContext = context || null;
+      writebackUpdates.context = normalizedContext;
+      dbUpdates.context = normalizedContext;
     }
 
-    if (effort !== undefined && effort !== idea.effort) {
-      if (effort !== null && effort !== '' && !isAllowed(effort, IDEA_SCORES)) {
-        return errorResponse('Invalid idea effort', 400);
+    let validationError = applyScoreField({
+      incoming: impact,
+      current: idea.impact,
+      field: 'impact',
+      label: 'impact',
+      writebackUpdates,
+      dbUpdates,
+    });
+    if (!validationError) {
+      validationError = applyScoreField({
+        incoming: confidence,
+        current: idea.confidence,
+        field: 'confidence',
+        label: 'confidence',
+        writebackUpdates,
+        dbUpdates,
+      });
+    }
+    if (!validationError) {
+      validationError = applyScoreField({
+        incoming: effort,
+        current: idea.effort,
+        field: 'effort',
+        label: 'effort',
+        writebackUpdates,
+        dbUpdates,
+      });
+    }
+    if (validationError) return validationError;
+
+    if (project !== undefined && (project || null) !== (idea.project || null)) {
+      writebackUpdates.project = project || null;
+      dbUpdates.project = project || null;
+    }
+
+    validationError = applyDateField({
+      incoming: ideaCreated,
+      current: idea.ideaCreated,
+      field: 'ideaCreated',
+      label: 'ideaCreated',
+      writebackUpdates,
+      dbUpdates,
+    });
+    if (!validationError) {
+      validationError = applyDateField({
+        incoming: reviewedAt,
+        current: idea.reviewedAt,
+        field: 'reviewedAt',
+        label: 'reviewedAt',
+        writebackUpdates,
+        dbUpdates,
+      });
+    }
+    if (validationError) return validationError;
+
+    if (
+      notesSummary !== undefined &&
+      (notesSummary || null) !== (idea.notesSummary || null)
+    ) {
+      writebackUpdates.notesSummary = notesSummary || null;
+      dbUpdates.notesSummary = notesSummary || null;
+    }
+
+    if (tags !== undefined) {
+      if (!Array.isArray(tags)) {
+        return errorResponse('tags must be an array', 400);
       }
-      writebackUpdates.effort = effort ?? null;
-      dbUpdates.effort = effort;
+      const normalizedTags = [
+        ...new Set(tags.map((item) => String(item).trim()).filter(Boolean)),
+      ];
+      if (!normalizedTags.includes('type/idea')) {
+        normalizedTags.unshift('type/idea');
+      }
+      if (JSON.stringify(normalizedTags) !== JSON.stringify(idea.tags || [])) {
+        writebackUpdates.tags = normalizedTags;
+        dbUpdates.tags = normalizedTags;
+      }
     }
 
     if (Object.keys(dbUpdates).length === 0) {

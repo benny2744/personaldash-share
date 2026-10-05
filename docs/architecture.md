@@ -25,14 +25,15 @@ Obsidian Vault (Markdown) ──fs.watch──▶ Indexer ──▶ PostgreSQL
 | `lib/fetcher.js`      | Shared SWR `fetcher` for client data hooks                                                                                                                              |
 | `lib/drawerUtils.js`  | Shared drawer helpers (e.g. frontmatter field builders)                                                                                                                 |
 | `lib/taskStats.js`    | Single source of truth for task status bucketing (`normalizeStatus`, `computeTaskStats`) so kanban counts never drift                                                   |
+| `lib/taskContext.js`  | Classifies auto-created tasks into a task Context (`Work`/`Personal`/`Side Projects`) via one batched light-LLM call and reads a project note's `Area` for inheritance; failures degrade to unclassified |
 
 API routes validate against `lib/domain.js` constants; UI drawers import the same labels/values to stay aligned with write-back.
 
 ### Key Invariants
 
 1. Markdown is the source of truth — Postgres is a derived projection
-2. Only frontmatter fields are synced bidirectionally (task, project, idea, and meeting metadata)
-3. Write-back never modifies body content
+2. Frontmatter is canonical for task, idea, and meeting metadata; task relationship wikilinks are mirrored into `## Related` in the body for graph extraction
+3. Write-back modifies only the requested frontmatter keys and, for task relations, their managed bullets in `## Related`; unrelated body content is preserved
 4. The indexer and sync worker use hash comparison for loop prevention
 5. **Prisma `@db.Date` fields serialize as UTC-midnight Date objects** — always use `toDateStr()` or `parseDateLocal()` to extract the local calendar date; never use `toISOString().split('T')[0]` on Prisma Date values
 
@@ -60,6 +61,25 @@ For date arithmetic (advancing days, computing ranges), parse with `new Date(dat
 - The Kanban **date window** filter (last 7 / 30 / 90 days, this year) uses **`whenDate` when present**, and falls back to DB **`createdAt`** only if `When` is missing, so historical work is not hidden solely because everything was indexed in the same minute.
 - The date window **defaults to “All”** so the kanban is the source of truth for task totals. Status column counts therefore match the home/dashboard cards, which compute via the shared `lib/taskStats.js` (`computeTaskStats`). A null/empty `Status` is normalized to `archived` everywhere so it never inflates a board column.
 - The **“updated” sort** on both kanban boards uses `notes.file_modified_at` (vault file mtime captured by the indexer, exposed as top-level `fileModifiedAt` in the tasks/ideas APIs), not Prisma `updatedAt`. vault notes carry no `Updated:` frontmatter, so mtime is the only edit-time signal; `updatedAt` is a pure DB bookkeeping timestamp that gets reset whenever typed rows are recreated (remounts, reconciles, DB restores).
+
+### Task metadata and Kanban filters
+
+- Canonical task notes live in `tasks/*.md` and follow `system/Templates/Task.md`. `Context` is one of `Work`, `Personal`, or `Side Projects`; blank is valid and shown as **Unclassified**. Context is independent of `Project`, `Area`, and `Domain`.
+- `Project` is a finite initiative; `Area` is an ongoing responsibility; `Domain` is a detailed category. `People` and `Courses` are wikilink arrays. Use lowercase `tags` and preserve `type/task`; the indexer also reads legacy uppercase `Tags`.
+- Kanban filters compose across Context, project membership or a specific project, Domain, Area, tags, People, Courses, priority, date window, and title search. `Project` supports **All**, **Has project**, **No project**, and individual project values. Different filters combine with AND. The selected filters are reflected in query parameters so a board view can be refreshed or shared.
+- Context and Area are nullable, indexed columns on the app's derived `Task` projection. `extractTaskFields()` reads their frontmatter values, and the indexer detects metadata drift for unchanged-hash task notes so newly added task fields hydrate without a full reindex.
+- The task drawer writes metadata through `PATCH /api/tasks/[id]`, the queued hash-guarded sync worker, and the existing GBrain sync trigger. It refreshes the note's indexed frontmatter snapshot after write-back. Relationship changes also replace only matching Project/Area/Person/Course bullets under `## Related`; meeting and other unrelated body links remain intact.
+- GBrain retains task frontmatter for retrieval, but graph extraction reads body wikilinks. The `## Related` section therefore mirrors known Project, Area, People, Courses, and meeting relationships as body links. Do not infer unknown metadata; leave it blank.
+- **Auto-created tasks are classified forward-only.** The meeting pipeline (`lib/meetingPipeline/tasks.js`) classifies each proposed-task batch in one light-LLM call (`classifyTaskContexts` in `lib/taskContext.js`), applies a deterministic floor — recognized meeting types default unclassified tasks to `Work` — and inherits the linked project note's `Area` when the meeting resolved none, always emitting the `Context`/`Area` frontmatter keys. Classification failures never block creation — the task is simply created unclassified. Existing notes without a canonical Context stay in the Unclassified bucket until manually tagged.
+
+### Idea funnel taxonomy and board
+
+- Canonical idea notes live in `ideas/*.md` and follow `system/Templates/Idea.md`. Status is a **funnel + closures** taxonomy: `Captured` → `Incubating` → `Exploring` while an idea matures; `Graduated` (became a project — set the `Project` wikilink), `Shipped`, `Retired`, and `Abandoned` close it out. The board renders the three funnel columns plus a collapsed **Closed** column that expands into the four closures; dropping onto the collapsed column retires.
+- `IDEA_FUNNEL_STATUSES` / `IDEA_CLOSED_STATUSES` (`lib/domain.js`) hold canonical **labels** (`'Captured'`); board buckets, card status keys, and URL state use lowercase `IDEA_BOARD_STATUSES` **values** (`'captured'`). Components must lowercase the label arrays before keying by them (`FUNNEL_VALUES`/`CLOSED_VALUES` in `IdeaKanbanBoard.js`) — rendering columns from the raw labels looks up `undefined` tasks and crashes `KanbanColumn`.
+- Legacy values are normalized **on read only** (`normalizeIdeaStatus` / `normalizeIdeaScore` in `lib/frontmatter.js`): `Backburner` → `Incubating`, `In Progress` → `Exploring`, `Done` → `Shipped`, unknown/blank → `Captured`, and t-shirt effort sizes (`Small`/`XL`/…) map onto `High`/`Medium`/`Low`. Writes (drawer PATCH, backfill) stay strict. Unknown statuses are preserved as-is and bucket to Captured on the board.
+- Idea metadata beyond status: `Context` (same `Work`/`Personal`/`Side Projects` enum as tasks; blank = Unclassified), `Project` (wikilink, set on graduation), `Created`/`Reviewed` dates, `Impact`/`Confidence`/`Effort` scores, `Domain`, `Notes`, and lowercase `tags` (preserve `type/idea`; legacy uppercase `Tags` is read as a fallback). `Context` and `Project` are indexed columns on the derived `Idea` projection, hydrated by the indexer like task metadata.
+- The Ideas tab shares the task board's URL-shareable filter machinery (search across title/domain/notes/tags, Context, Project incl. Has/No project, Domain with case-insensitive dedupe, tag, Impact, Confidence, Effort, created-date window, sort by updated/created/impact/confidence/title). The Incubating column has a **Mark reviewed** sweep that PATCHes `reviewedAt: <today>` on visible cards.
+- `scripts/backfill-idea-taxonomy.mjs` is the idempotent one-off that migrated the folder onto the taxonomy (deterministic status remap with a 14-day re-capture rule for recent Backburner items, `Done` + project → `Graduated`, effort drift fixes, `Reviewed` stamp, batched light-LLM `Context` classification with a `Context: ''` unclassified marker). Re-runs change nothing.
 
 ### Stale-task auto-archiver
 
@@ -160,12 +180,17 @@ API write guardrails additionally reject PUT/PATCH to `sources/**` (immutable), 
   - `status` → `Status`
   - `priority` → `Priority Level`
   - `whenDate` → `When`
+  - `context` → `Context` (`Work`, `Personal`, `Side Projects`)
   - `project` → `Project`
+  - `area` → `Area`
   - `domain` → `Domain`
   - `people` → `People`
   - `courses` → `Courses` (reads legacy `📕 Courses` as a fallback)
+  - `tags` → lowercase `tags` (the required `type/task` tag is retained)
 - Write-back uses `lib/frontmatter.js` key mapping and the sync worker queue, so Markdown remains canonical while the UI stays responsive.
+- Filter values are derived from indexed task metadata. Existing notes with no Context remain unclassified until edited; new tasks should use the canonical task template.
 - If the backing note file is missing during `PATCH`, the API returns **410 Gone**, soft-deletes the note row, and removes the typed task record so stale DB rows do not reappear after SWR revalidation.
+- The idea drawer supports the full idea front matter through `PATCH /api/ideas/[id]`: `status`, `context`, `domain`, `project` (wikilinked), `impact`/`confidence`/`effort` (strict `High`/`Medium`/`Low`), `ideaCreated` → `Created`, `reviewedAt` → `Reviewed`, `notesSummary` → `Notes`, and lowercase `tags` (`type/idea` retained). Graduating without a project link shows a hint in the drawer; the same 410 stale-file guard applies.
 
 ## Meeting Frontmatter Sync
 
@@ -180,6 +205,17 @@ API write guardrails additionally reject PUT/PATCH to `sources/**` (immutable), 
   - `area` → `Area`
   - `actionItems` → `Action Items`
   - `decisions` → `Decisions`
+- Attendee write-back also rewrites the body `## Attendees` section with
+  `- [[Name]]` wikilinks (`patchAttendeesSection` in `lib/frontmatter.js`,
+  applied by the write-back worker for every meeting attendee change —
+  including linker-agent resolutions). gbrain extracts person→meeting
+  backlinks from BODY wikilinks only, so a frontmatter-only update would
+  never reach the people notes.
+- Hand-entered attendee names are resolved against vault people notes
+  (canonical titles + `aliases:` frontmatter) before anything is written;
+  names that match no note become pending `EntitySuggestion` rows (Link
+  Review) and are returned as `unresolvedAttendees` in the PATCH response —
+  they are never written into the note.
 
 ## Meeting Audio Pipeline
 
@@ -227,13 +263,13 @@ After a note is written and indexed, an optional **link-lint worker** (`lib/meet
 | ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `upload`     | Receive audio, store in S3, create `MeetingJob`                                                                                                                                                                                                                                                 |
 | `queued`     | Waiting in the serial worker queue (upload complete, processing not started)                                                                                                                                                                                                                    |
-| `transcode`  | Audio files larger than `MEETING_ASR_TRANSCODE_THRESHOLD` are transcoded to low-bitrate mono MP3 with ffmpeg (temp-file download for full format detection); originals are kept until ASR succeeds, then deleted                                                                                 |
+| `transcode`  | Audio files larger than `MEETING_ASR_TRANSCODE_THRESHOLD` are transcoded to low-bitrate mono MP3 with ffmpeg (temp-file download for full format detection); originals are kept until ASR succeeds, then deleted                                                                                |
 | `asr`        | DashScope async transcription via presigned URL                                                                                                                                                                                                                                                 |
 | `clean`      | LLM pass 1: metadata extraction + verbatim transcript cleanup (chunked when transcript > 2.5k chars; substeps like `clean_metadata`, `clean_chunk_N_of_M`)                                                                                                                                      |
 | `format`     | **opencode only:** per-type format agent returns JSON contract (`summary_en`, `summary_zh`, `action_items`, `decisions`, `frontmatter_extra`); falls back to code passes on failure                                                                                                             |
 | `summary_zh` | LLM pass 2: Chinese summary (code path only; skipped when opencode contract provides `summary_zh`)                                                                                                                                                                                              |
 | `summary_en` | LLM pass 3: English summary (code path only; skipped when opencode contract provides `summary_en`)                                                                                                                                                                                              |
-| `tasks`      | Parse action items from contract or English summary; LLM maps each to title/people/when; write `tasks/*.md` with `Status: Proposed` and wiki-link back to the meeting (`lib/meetingPipeline/tasks.js`)                                                                                          |
+| `tasks`      | Parse action items from contract or English summary; LLM maps each to title/people/when; classify Context + inherit project Area; write `tasks/*.md` with `Status: Proposed` and wiki-link back to the meeting (`lib/meetingPipeline/tasks.js`)                                                                                          |
 | `assemble`   | Pass 4: combine meeting frontmatter + body. **Code path:** fixed layout (Context, Agenda, Decisions, Action Items, Notes, 中文总结). **Opencode path:** type-specific `summary_en` rendered verbatim + deterministic Attendees / 中文总结 / Transcript blocks (`lib/meetingPipeline/passes.js`) |
 | `write`      | Write meeting note to `meetings/` with collision-safe filename                                                                                                                                                                                                                                  |
 | `done`       | Delete S3 audio object, set `outputPath` on job; enqueue link-lint pass when linker is enabled                                                                                                                                                                                                  |
@@ -244,6 +280,7 @@ Unresolved or fuzzy entity mentions surfaced by the linker are stored in `entity
 
 - `GET /api/link-suggestions?status=pending` — list suggestions with meeting context
 - `POST /api/link-suggestions/[id]/action` — `{ action: "create" | "map" | "dismiss", ... }`
+- `POST /api/link-suggestions/clear-all` — dismiss every pending suggestion at once (`{ cleared: <count> }`)
 
 Actions can create stub People/Projects/Areas notes, map a mention to an existing note (with optional alias learning via frontmatter `aliases:`), or dismiss. Alias maps from vault notes are loaded into `vaultContext` for better attendee/project/area resolution during assembly and linking.
 
@@ -265,6 +302,11 @@ Actions can create stub People/Projects/Areas notes, map a mention to an existin
 
 - `GET /api/link-suggestions` — list entity link suggestions for the review inbox
 - `POST /api/link-suggestions/[id]/action` — act on a suggestion (create note, map, dismiss)
+- `POST /api/link-suggestions/clear-all` — bulk-dismiss all pending suggestions
+
+### LLM response resilience and audio retention
+
+The LLM fetch layer validates returned text before accepting HTTP 200 responses. Empty-content responses are retried with bounded backoff; after exhaustion their missing-content diagnosis is preserved for clean-pass fallback classification. Audio is retained through ASR, cleaning, summarization, and formatting, and cleaned up after the output note is written and the job completes. Failed or cancelled jobs retain audio for the existing 24-hour orphan-cleanup grace window. Supplementary attachments retain their existing end-of-job cleanup behavior.
 
 ### Job cancellation and retry
 
@@ -272,7 +314,7 @@ In-progress pipeline jobs can be cancelled via the UI cancel button or `PATCH /a
 
 1. `PATCH` calls `cancelMeetingJob(id)` to set `status='cancelled'` in Postgres.
 2. The pipeline checks the durable job status before each major step and inside the ASR poll loop.
-3. On cancellation, the job is marked `cancelled` with the current step preserved and S3 audio is deleted.
+3. On cancellation, the job is marked `cancelled` with the current step preserved; S3 audio is retained for retry until orphan cleanup after the 24-hour grace window.
 
 Failed or cancelled jobs can be retried with `PATCH /api/meetings/jobs/[id]` and `{ "status": "queued" }` (`requeueMeetingJob`), provided their audio is still in S3. To keep retry possible after a container restart, the startup orphan-audio GC (`sweepOrphanAudio` in `lib/meetingPipeline/startup.js`) protects audio referenced by jobs that failed or were cancelled within the last 24 hours (`listRecentlyFinishedAudioKeys`), matching the grace window used by the daily orphan sweeper.
 

@@ -14,6 +14,9 @@ jobs:
       VAULT_PATH: /tmp/vault
       MEETING_S3_ENDPOINT: http://localhost:9000
       MEETING_S3_PUBLIC_BASE: http://localhost:9000
+      MEETING_S3_BUCKET: meeting-audio
+      MEETING_S3_ACCESS_KEY: placeholder
+      MEETING_S3_SECRET_KEY: placeholder
       QWEN_FILETRANS_BASE_URL: https://dashscope.aliyuncs.com/api/v1
     steps:
       - uses: actions/checkout@v4

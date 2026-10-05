@@ -12,6 +12,7 @@ import { createHermesRuntime } from '@/lib/agents/hermesRuntime';
 import { chatReducer, createInitialChatState } from '@/lib/hermes/chatReducer';
 import { prepareAttachments } from '@/lib/hermes/attachments';
 import { reconcileTranscript } from '@/lib/hermes/transcriptSync';
+import { resolveResumeTarget } from '@/lib/hermes/resumeTarget';
 import {
   loadDraft,
   loadPanelState,
@@ -246,14 +247,15 @@ export function useHermesChat() {
       await ensureConnected();
       if (!isCurrent()) return null;
 
-      // Resolve to the live session tip (compression continuations branch the id).
-      let targetId = sessionId;
-      try {
-        const latest = await runtime.sessions.getLatestDescendant(sessionId);
-        if (latest?.session_id) targetId = latest.session_id;
-      } catch {
-        // continue with original id
-      }
+      // Resolve to the live session tip (compression continuations branch the
+      // id). resolveResumeTarget refuses delegate/branch/reset children, which
+      // the REST latest-descendant endpoint does not filter — resuming one of
+      // those renders the sub-agent's internal transcript and poisons the
+      // parent's transcript cache via aliasing.
+      const targetId = await resolveResumeTarget(sessionId, {
+        getLatestDescendant: runtime.sessions.getLatestDescendant,
+        getSession: runtime.sessions.get,
+      });
       if (!isCurrent()) return null;
 
       // Bind the live session via WS. The RPC history projection lacks DB ids,
@@ -276,6 +278,19 @@ export function useHermesChat() {
         },
       });
 
+      // One-shot usage snapshot: the ~1/s ticker only runs mid-turn, so a
+      // resumed session would otherwise show nothing until the next prompt.
+      // The result also seeds the baseline so live deltas stack on top of the
+      // cold REST row instead of double-counting (or masking) history.
+      runtime.sessions
+        .usage(liveSessionId)
+        .then((usage) => {
+          if (!isCurrent()) return;
+          dispatch({ type: 'usage.baseline', payload: usage });
+          dispatch({ type: 'usage.set', payload: usage });
+        })
+        .catch(() => {});
+
       // Fetch cheap metadata, then use the integer message id cursor to decide
       // whether we can skip transfer, append a tail, or need a full replace.
       let sessionRow;
@@ -285,6 +300,9 @@ export function useHermesChat() {
         sessionRow = null;
       }
       if (!isCurrent()) return null;
+      // Cold stats: the REST row carries lifetime token/cost/count columns
+      // the live usage ticker never reports (resumed + ended sessions).
+      dispatch({ type: 'stats.cold', payload: sessionRow });
 
       const reconciliation = await reconcileTranscript({
         cached,
@@ -441,6 +459,36 @@ export function useHermesChat() {
     if (!liveSessionId || runtime.connectionState !== 'open') return;
     await runtime.sessions.interrupt(liveSessionId);
   }, [runtime]);
+
+  // A live-voice delegation: the bubble and the persisted row are what the
+  // user said; the recent spoken exchange rides the model input only (the
+  // gateway prepends the voice-live turn note, never the system prompt).
+  const sendLiveTurn = useCallback(
+    async (text, voiceContext = '') => {
+      const trimmed = String(text || '').trim();
+      if (!trimmed) return;
+
+      await ensureConnected();
+      let liveSessionId = stateRef.current.liveSessionId;
+
+      if (!liveSessionId) {
+        const created = await createSession();
+        liveSessionId = created.session_id;
+      }
+
+      dispatch({
+        type: 'user.message',
+        payload: { text: trimmed, attachments: [] },
+      });
+
+      await runtime.prompt.submit(liveSessionId, trimmed, {
+        surface: 'voice-live',
+        voice_context: String(voiceContext || '').slice(0, 6000),
+      });
+      await refreshSessions();
+    },
+    [createSession, ensureConnected, refreshSessions, runtime],
+  );
 
   const respondApproval = useCallback(
     async (choice) => {
@@ -603,6 +651,7 @@ export function useHermesChat() {
     createSession,
     resumeSession,
     sendMessage,
+    sendLiveTurn,
     stop,
     respondApproval,
     respondClarify,

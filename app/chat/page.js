@@ -1,7 +1,7 @@
 import HermesChatClient from '@/components/hermes/HermesChatClient';
 
 export const metadata = {
-  title: 'Chat - PersonalDash',
+  title: 'Chat - WorkDash',
 };
 
 export const dynamic = 'force-dynamic';

@@ -6,7 +6,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import MeetingsClient from '@/components/meetings/MeetingsClient';
 
 export const metadata = {
-  title: 'Meetings - PersonalDash',
+  title: 'Meetings - WorkDash',
 };
 
 export default async function MeetingsPage() {

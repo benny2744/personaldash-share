@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useLayoutEffect, useMemo, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import {
   PanelLeftClose,
@@ -15,7 +15,6 @@ import {
   loadPanelState,
   savePanelState,
 } from '@/lib/hermes/panelState';
-import { cn } from '@/lib/utils';
 import DingTalkClient from '@/components/dingtalk/DingTalkClient';
 import ActivityDock from './ActivityDock';
 import Composer from './Composer';
@@ -23,19 +22,6 @@ import PromptDialogs from './PromptDialogs';
 import SessionSidebar from './SessionSidebar';
 import Transcript from './Transcript';
 import WorkspacePanel from './WorkspacePanel';
-
-function useMediaQuery(query) {
-  const [matches, setMatches] = useState(false);
-  useLayoutEffect(() => {
-    if (typeof window === 'undefined') return undefined;
-    const media = window.matchMedia(query);
-    const onChange = () => setMatches(media.matches);
-    onChange();
-    media.addEventListener('change', onChange);
-    return () => media.removeEventListener('change', onChange);
-  }, [query]);
-  return matches;
-}
 
 export default function ChatWorkspace({ chat, isOnline }) {
   const searchParams = useSearchParams();
@@ -46,12 +32,24 @@ export default function ChatWorkspace({ chat, isOnline }) {
   const [hydrated, setHydrated] = useState(false);
   const [mobileSessionsOpen, setMobileSessionsOpen] = useState(false);
   const [mobileWorkspaceOpen, setMobileWorkspaceOpen] = useState(false);
-  const isTablet = useMediaQuery('(max-width: 900px)');
-  const isMobile = useMediaQuery('(max-width: 640px)');
+  const frameRef = useRef(null);
+  const [frameWidth, setFrameWidth] = useState(0);
+  useLayoutEffect(() => {
+    const frame = frameRef.current;
+    if (!frame) return;
+    const observer = new ResizeObserver(([entry]) =>
+      setFrameWidth(entry.contentRect.width),
+    );
+    observer.observe(frame);
+    return () => observer.disconnect();
+  }, [panels.chatMode, hydrated]);
 
   useEffect(() => {
     const loaded = loadPanelState();
-    if (initialChatMode === 'dingtalk' || initialChatMode === 'hermes') {
+    if (
+      initialChatMode === 'dingtalk' ||
+      initialChatMode === 'hermes'
+    ) {
       loaded.chatMode = initialChatMode;
     }
     setPanels(loaded);
@@ -62,25 +60,36 @@ export default function ChatWorkspace({ chat, isOnline }) {
     if (hydrated) savePanelState(panels);
   }, [panels, hydrated]);
 
-  const showSessions = useMemo(() => {
-    if (!hydrated || isMobile || isTablet) return false;
-    return panels.sessionsOpen;
-  }, [hydrated, isMobile, isTablet, panels.sessionsOpen]);
-
-  const showWorkspace = useMemo(() => {
-    if (!hydrated || isMobile || isTablet) return false;
-    return panels.workspaceOpen;
-  }, [hydrated, isMobile, isTablet, panels.workspaceOpen]);
-
   const centerMinWidth = 420;
+  const dividerWidth = 4;
+  const canDockSessions =
+    hydrated &&
+    frameWidth >= centerMinWidth + panels.sessionsWidth + dividerWidth;
+  const showSessions = canDockSessions && panels.sessionsOpen;
+  const canDockWorkspace =
+    hydrated &&
+    frameWidth >=
+      centerMinWidth +
+        panels.workspaceWidth +
+        dividerWidth +
+        (showSessions ? panels.sessionsWidth + dividerWidth : 0);
+  const showWorkspace = canDockWorkspace && panels.workspaceOpen;
   const chatMode = panels.chatMode || 'hermes';
+
   const setChatMode = (chatMode) =>
     setPanels((current) => ({ ...current, chatMode }));
 
   if (hydrated && chatMode === 'dingtalk') {
     return (
-      <div className="flex h-full min-h-0 flex-col overflow-hidden bg-[var(--background)]">
-        <div className="flex items-center gap-2 border-b border-[var(--border)] bg-[var(--surface-container-low)]/80 px-3 py-2 backdrop-blur-xl">
+      <div
+        ref={frameRef}
+        data-layout="chat-frame"
+        className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-[var(--background)]"
+      >
+        <div
+          data-layout="chat-toolbar"
+          className="flex shrink-0 flex-wrap items-center gap-1 border-b border-[var(--border)] bg-[var(--surface-container-low)]/80 px-3 py-2 backdrop-blur-xl"
+        >
           <TabsList>
             <TabsTrigger onClick={() => setChatMode('hermes')}>
               Hermes
@@ -89,18 +98,28 @@ export default function ChatWorkspace({ chat, isOnline }) {
               DingTalk
             </TabsTrigger>
           </TabsList>
-          <div className="ml-auto text-xs text-[var(--text-muted)]">
+          <div className="ml-auto shrink-0 text-xs text-[var(--text-muted)]">
             {isOnline ? 'Online' : 'Offline'}
           </div>
         </div>
-        <DingTalkClient sidebarWidth={panels.sessionsWidth} initialActiveId={initialDingTalkConversationId} />
+        <DingTalkClient
+          sidebarWidth={panels.sessionsWidth}
+          initialActiveId={initialDingTalkConversationId}
+        />
       </div>
     );
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col overflow-hidden bg-[var(--background)]">
-      <div className="flex items-center gap-2 border-b border-[var(--border)] bg-[var(--surface-container-low)]/80 px-3 py-2 backdrop-blur-xl">
+    <div
+      ref={frameRef}
+      data-layout="chat-frame"
+      className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-[var(--background)]"
+    >
+      <div
+        data-layout="chat-toolbar"
+        className="flex shrink-0 flex-wrap items-center gap-1 border-b border-[var(--border)] bg-[var(--surface-container-low)]/80 px-3 py-2 backdrop-blur-xl"
+      >
         <TabsList>
           <TabsTrigger active onClick={() => setChatMode('hermes')}>
             Hermes
@@ -112,8 +131,11 @@ export default function ChatWorkspace({ chat, isOnline }) {
         <Button
           size="sm"
           variant="ghost"
+          className="shrink-0 px-2 sm:px-3"
+          aria-label="Sessions"
+          title="Sessions"
           onClick={() => {
-            if (isMobile || isTablet) {
+            if (!canDockSessions) {
               setMobileSessionsOpen(true);
             } else {
               setPanels((current) => ({
@@ -128,13 +150,16 @@ export default function ChatWorkspace({ chat, isOnline }) {
           ) : (
             <PanelLeftOpen size={16} />
           )}
-          Sessions
+          <span className="hidden sm:inline">Sessions</span>
         </Button>
         <Button
           size="sm"
           variant="ghost"
+          className="shrink-0 px-2 sm:px-3"
+          aria-label="Workspace"
+          title="Workspace"
           onClick={() => {
-            if (isMobile || isTablet) {
+            if (!canDockWorkspace) {
               setMobileWorkspaceOpen(true);
             } else {
               setPanels((current) => ({
@@ -149,9 +174,9 @@ export default function ChatWorkspace({ chat, isOnline }) {
           ) : (
             <PanelRightOpen size={16} />
           )}
-          Workspace
+          <span className="hidden sm:inline">Workspace</span>
         </Button>
-        <div className="ml-auto text-xs text-[var(--text-muted)]">
+        <div className="ml-auto shrink-0 text-xs text-[var(--text-muted)]">
           {isOnline ? 'Online' : 'Offline'}
         </div>
       </div>
@@ -181,7 +206,7 @@ export default function ChatWorkspace({ chat, isOnline }) {
               onSelectProfile={chat.selectProfile}
             />
             <div
-              className="hidden w-1 cursor-col-resize bg-transparent hover:bg-[var(--accent-muted)] md:block"
+              className="w-1 shrink-0 cursor-col-resize bg-transparent hover:bg-[var(--accent-muted)]"
               onMouseDown={(event) => {
                 event.preventDefault();
                 const startX = event.clientX;
@@ -190,7 +215,16 @@ export default function ChatWorkspace({ chat, isOnline }) {
                   const next = startWidth + (moveEvent.clientX - startX);
                   setPanels((current) => ({
                     ...current,
-                    sessionsWidth: Math.min(420, Math.max(200, next)),
+                    sessionsWidth: Math.min(
+                      420,
+                      frameWidth -
+                        centerMinWidth -
+                        dividerWidth -
+                        (showWorkspace
+                          ? panels.workspaceWidth + dividerWidth
+                          : 0),
+                      Math.max(200, next),
+                    ),
                   }));
                 }
                 function onUp() {
@@ -208,7 +242,7 @@ export default function ChatWorkspace({ chat, isOnline }) {
           className="flex min-h-0 min-w-0 flex-1 flex-col"
           style={{
             minWidth:
-              hydrated && !isMobile && !isTablet ? centerMinWidth : undefined,
+              showSessions || showWorkspace ? centerMinWidth : undefined,
           }}
         >
           {chat.bootstrapError ? (
@@ -258,7 +292,7 @@ export default function ChatWorkspace({ chat, isOnline }) {
         {showWorkspace ? (
           <>
             <div
-              className="hidden w-1 cursor-col-resize bg-transparent hover:bg-[var(--accent-muted)] md:block"
+              className="w-1 shrink-0 cursor-col-resize bg-transparent hover:bg-[var(--accent-muted)]"
               onMouseDown={(event) => {
                 event.preventDefault();
                 const startX = event.clientX;
@@ -267,7 +301,16 @@ export default function ChatWorkspace({ chat, isOnline }) {
                   const next = startWidth - (moveEvent.clientX - startX);
                   setPanels((current) => ({
                     ...current,
-                    workspaceWidth: Math.min(520, Math.max(220, next)),
+                    workspaceWidth: Math.min(
+                      520,
+                      frameWidth -
+                        centerMinWidth -
+                        dividerWidth -
+                        (showSessions
+                          ? panels.sessionsWidth + dividerWidth
+                          : 0),
+                      Math.max(220, next),
+                    ),
                   }));
                 }
                 function onUp() {
@@ -288,6 +331,17 @@ export default function ChatWorkspace({ chat, isOnline }) {
               artifacts={chat.state.artifacts}
               todos={chat.state.todos}
               runtime={chat.runtime}
+              usage={chat.state.usage}
+              usageBaseline={chat.state.usageBaseline}
+              coldStats={chat.state.coldStats}
+              running={chat.state.running}
+              statsOpen={panels.statsOpen}
+              onStatsToggle={() =>
+                setPanels((current) => ({
+                  ...current,
+                  statsOpen: !current.statsOpen,
+                }))
+              }
             />
           </>
         ) : null}
@@ -363,6 +417,17 @@ export default function ChatWorkspace({ chat, isOnline }) {
               artifacts={chat.state.artifacts}
               todos={chat.state.todos}
               runtime={chat.runtime}
+              usage={chat.state.usage}
+              usageBaseline={chat.state.usageBaseline}
+              coldStats={chat.state.coldStats}
+              running={chat.state.running}
+              statsOpen={panels.statsOpen}
+              onStatsToggle={() =>
+                setPanels((current) => ({
+                  ...current,
+                  statsOpen: !current.statsOpen,
+                }))
+              }
             />
           </div>
         </div>

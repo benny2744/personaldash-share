@@ -1,7 +1,8 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import {
+  AudioLines,
   Loader2,
   Mic,
   MicOff,
@@ -12,12 +13,8 @@ import {
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
-import {
-  canStartRecording,
-  VOICE_MAX_SECONDS,
-} from '@/lib/hermes/voiceRecording';
-import { startStreamingTranscription } from '@/lib/hermes/voiceCapture';
-import { applyLiveVoiceTranscript } from '@/lib/hermes/transcriptDraft';
+import { VOICE_MAX_SECONDS } from '@/lib/hermes/voiceRecording';
+import useVoiceDictation from '@/hooks/useVoiceDictation';
 import ModelPicker from './ModelPicker';
 import { cn } from '@/lib/utils';
 
@@ -42,18 +39,21 @@ export default function Composer({
   modelsLoading,
   modelSwitching,
   onSwitchModel,
+  liveVoice,
 }) {
   const fileRef = useRef(null);
-  const captureRef = useRef(null);
-  const baseDraftRef = useRef('');
-  const voiceLiveRef = useRef(false);
-  const lastAppliedDraftRef = useRef('');
   const [files, setFiles] = useState([]);
   const [fileError, setFileError] = useState('');
   const [processingFiles, setProcessingFiles] = useState([]);
-  const [voiceState, setVoiceState] = useState('idle');
-  const [voiceError, setVoiceError] = useState('');
-  const [elapsed, setElapsed] = useState(0);
+
+  const voice = useVoiceDictation({
+    offline,
+    disabled,
+    busy: running,
+    onPartial: ({ merged }) => onChange?.(merged),
+    onReset: (baseText) => onChange?.(baseText),
+  });
+  const { voiceState, voiceError, elapsed, micEnabled } = voice;
 
   const canSend =
     !disabled &&
@@ -63,55 +63,9 @@ export default function Composer({
     processingFiles.length === 0 &&
     (Boolean(value.trim()) || files.length > 0);
 
-  const micEnabled = canStartRecording(voiceState, {
-    offline,
-    disabled,
-    busy: running,
-  });
-
-  useEffect(() => {
-    if (voiceState !== 'recording') return undefined;
-    setElapsed(0);
-    const timer = setInterval(() => {
-      setElapsed((current) => current + 1);
-    }, 1000);
-    return () => clearInterval(timer);
-  }, [voiceState]);
-
-  useEffect(() => {
-    return () => {
-      cleanupRecording();
-    };
-  }, []);
-
-  function freezeVoiceUpdates() {
-    voiceLiveRef.current = false;
-    const capture = captureRef.current;
-    if (capture) {
-      try {
-        capture.suppressDraftUpdates?.();
-      } catch {
-        // ignore
-      }
-    }
-  }
-
-  function cleanupRecording() {
-    voiceLiveRef.current = false;
-    if (captureRef.current) {
-      try {
-        captureRef.current.cancel();
-      } catch {
-        // ignore
-      }
-      captureRef.current = null;
-    }
-  }
-
   async function handleSend() {
     if (!canSend) return;
-    freezeVoiceUpdates();
-    captureRef.current = null;
+    voice.freeze();
     const pending = files.slice();
     setFiles([]);
     setFileError('');
@@ -134,113 +88,17 @@ export default function Composer({
     }
   }
 
-  function applyVoiceText(text) {
-    if (!voiceLiveRef.current) return;
-    const next = applyLiveVoiceTranscript(baseDraftRef.current, text);
-    lastAppliedDraftRef.current = next;
-    onChange?.(next);
-  }
-
   function handleDraftChange(nextValue) {
-    if (
-      voiceLiveRef.current &&
-      nextValue !== lastAppliedDraftRef.current
-    ) {
+    if (voice.isLive() && nextValue !== voice.getLastApplied()) {
       // User edited away from the latest ASR hypothesis — stop overwriting.
-      freezeVoiceUpdates();
-      captureRef.current = null;
+      voice.freeze();
     }
     onChange?.(nextValue);
   }
 
-  async function startRecording() {
-    if (!micEnabled) return;
-    // Tear down any post-Stop settle window from a previous take.
-    if (captureRef.current) {
-      try {
-        captureRef.current.cancel();
-      } catch {
-        // ignore
-      }
-      captureRef.current = null;
-    }
-    setVoiceError('');
-    baseDraftRef.current = value;
-    lastAppliedDraftRef.current = value;
-    voiceLiveRef.current = true;
-    try {
-      const capture = await startStreamingTranscription({
-        onPartial: applyVoiceText,
-        onSettled: () => {
-          voiceLiveRef.current = false;
-          if (captureRef.current === capture) {
-            captureRef.current = null;
-          }
-        },
-        onAutoStop: () => {
-          stopRecording();
-        },
-        maxSeconds: VOICE_MAX_SECONDS,
-      });
-      captureRef.current = capture;
-      setVoiceState('recording');
-    } catch (error) {
-      cleanupRecording();
-      setVoiceState('error');
-      setVoiceError(
-        error?.name === 'NotAllowedError'
-          ? 'Microphone permission denied'
-          : error.message || 'Could not start microphone',
-      );
-    }
-  }
-
-  function stopRecording() {
-    const capture = captureRef.current;
-    if (!capture) return;
-
-    // Keep voiceLiveRef true so post-commit finals can still land.
-    let latest = '';
-    try {
-      latest = String(capture.stop() || '').trim();
-    } catch (error) {
-      voiceLiveRef.current = false;
-      captureRef.current = null;
-      setVoiceState('error');
-      setVoiceError(error.message || String(error));
-      setElapsed(0);
-      return;
-    }
-
-    const draftChanged =
-      String(lastAppliedDraftRef.current || '').trim() !==
-        String(baseDraftRef.current || '').trim() || Boolean(latest);
-    if (!draftChanged) {
-      voiceLiveRef.current = false;
-      captureRef.current = null;
-      setVoiceState('error');
-      setVoiceError('No speech detected');
-      setElapsed(0);
-      return;
-    }
-
-    // Idle/editable immediately; capture keeps applying until settle/edit.
-    setVoiceState('idle');
-    setElapsed(0);
-  }
-
-  function cancelRecording() {
-    cleanupRecording();
-    onChange?.(baseDraftRef.current);
-    lastAppliedDraftRef.current = baseDraftRef.current;
-    setVoiceState('idle');
-    setVoiceError('');
-    setElapsed(0);
-  }
-
   return (
     <div className="border-t border-[var(--border)] bg-[var(--surface-card)] px-3 py-3 sm:px-4">
-      {(statusText || offline || voiceError || fileError || voiceState === 'recording') && (
+      {(statusText || offline || voiceError || fileError || voiceState === 'recording' || liveVoice?.active || liveVoice?.error) && (
         <div className="mb-2 flex flex-wrap items-center gap-2 text-xs text-[var(--text-secondary)]">
           {offline ? <span>Offline — sending disabled</span> : null}
           {!offline && statusText ? <span>{statusText}</span> : null}
@@ -248,6 +106,23 @@ export default function Composer({
             <Badge variant="destructive" pill>
               Recording {elapsed}s / {VOICE_MAX_SECONDS}s
             </Badge>
+          ) : null}
+          {liveVoice?.active ? (
+            <Badge variant="secondary" pill>
+              Live voice: {liveVoice.status}
+              {liveVoice.status !== 'idle' ? (
+                <button
+                  type="button"
+                  className="ml-1 underline"
+                  onClick={liveVoice.toggleMute}
+                >
+                  {liveVoice.muted ? 'unmute' : 'mute'}
+                </button>
+              ) : null}
+            </Badge>
+          ) : null}
+          {liveVoice?.error ? (
+            <span className="text-[var(--error)]">{liveVoice.error}</span>
           ) : null}
           {voiceError ? (
             <span className="text-[var(--error)]">{voiceError}</span>
@@ -352,7 +227,7 @@ export default function Composer({
                 size="icon"
                 variant="destructive"
                 className="shrink-0"
-                onClick={stopRecording}
+                onClick={voice.stop}
                 aria-label="Stop recording"
                 title="Stop recording"
               >
@@ -363,7 +238,7 @@ export default function Composer({
                 size="icon"
                 variant="ghost"
                 className="shrink-0"
-                onClick={cancelRecording}
+                onClick={voice.cancel}
                 aria-label="Cancel recording"
                 title="Cancel recording"
               >
@@ -376,14 +251,35 @@ export default function Composer({
               size="icon"
               variant="ghost"
               className="shrink-0"
-              disabled={!micEnabled}
-              onClick={startRecording}
+              disabled={!micEnabled || liveVoice?.active}
+              onClick={() => voice.start(value)}
               aria-label="Voice input"
               title="Voice input (Qwen realtime ASR)"
             >
               <Mic size={18} />
             </Button>
           )}
+          {liveVoice ? (
+            <Button
+              type="button"
+              size="icon"
+              variant={liveVoice.active ? 'destructive' : 'ghost'}
+              className={cn(
+                'shrink-0',
+                liveVoice.active && liveVoice.status === 'listening' && 'animate-pulse',
+              )}
+              disabled={disabled || offline || voiceState === 'recording'}
+              onClick={liveVoice.onToggle}
+              aria-label={liveVoice.active ? 'End live voice' : 'Start live voice'}
+              title={
+                liveVoice.active
+                  ? `End live voice (${liveVoice.status})`
+                  : 'Live voice — full-duplex Qwen realtime, delegates to Hermes'
+              }
+            >
+              <AudioLines size={18} />
+            </Button>
+          ) : null}
           <div
             className="mx-0.5 h-5 w-px shrink-0 bg-[var(--border)]"
             aria-hidden="true"

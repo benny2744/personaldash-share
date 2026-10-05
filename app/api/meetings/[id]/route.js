@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 import prisma from '@/lib/db';
 import { enqueueWriteBack } from '@/lib/syncWorker';
 import { MEETING_TYPES, errorResponse, isAllowed, parseDate } from '@/lib/api';
+import { loadMeetingVaultContext } from '@/lib/meetingPipeline/vaultContext';
+import { resolveEntityName } from '@/lib/meetingPipeline/analysis';
 
 export const dynamic = 'force-dynamic';
 
@@ -48,6 +50,34 @@ export async function PATCH(request, { params }) {
 
     const writebackUpdates = {};
     const dbUpdates = {};
+    const routeMeta = {};
+
+    /**
+     * Persist hand-entered names that matched no people note as pending
+     * EntitySuggestion rows (Link Review inbox). Idempotent per (filepath,
+     * mention) among pending rows — mirrors the meeting-linker's behavior.
+     */
+    async function persistAttendeeSuggestions(meetingRow, names) {
+      const filepath = meetingRow.note.filepath;
+      const existing = await prisma.entitySuggestion.findMany({
+        where: { filepath, status: 'pending' },
+        select: { mention: true },
+      });
+      const have = new Set(existing.map((row) => row.mention.toLowerCase()));
+      const rows = names
+        .filter((name) => !have.has(name.toLowerCase()))
+        .map((name) => ({
+          noteId: meetingRow.noteId,
+          filepath,
+          mention: name.slice(0, 200),
+          suggestedType: 'person',
+          evidence: 'Entered in meeting drawer; no matching people note',
+          status: 'pending',
+        }));
+      if (rows.length > 0) {
+        await prisma.entitySuggestion.createMany({ data: rows });
+      }
+    }
 
     if (meetingType !== undefined && meetingType !== meeting.meetingType) {
       if (meetingType !== null && meetingType !== '' && !isAllowed(meetingType, MEETING_TYPES)) {
@@ -73,10 +103,43 @@ export async function PATCH(request, { params }) {
         return NextResponse.json({ error: 'attendees must be an array' }, { status: 400 });
       }
       const normalizedAttendees = attendees.map((item) => String(item).trim()).filter(Boolean);
-      if (JSON.stringify(normalizedAttendees) !== JSON.stringify(meeting.attendees || [])) {
-        writebackUpdates.attendees = normalizedAttendees;
-        dbUpdates.attendees = normalizedAttendees;
+
+      // Hand-entered names are HINTS, not literals: resolve each against the
+      // vault people notes (canonical titles + `aliases:` frontmatter) so the
+      // note links existing people instead of inventing new link targets.
+      // Unresolved names are never written into the note — they become
+      // EntitySuggestion rows for the Link Review inbox.
+      const vaultContext = await loadMeetingVaultContext();
+      const resolved = [];
+      const unresolvedAttendees = [];
+      const seen = new Set();
+      for (const name of normalizedAttendees) {
+        const canonical = resolveEntityName(name, 'person', vaultContext);
+        if (!canonical) {
+          if (!unresolvedAttendees.some((u) => u.toLowerCase() === name.toLowerCase())) {
+            unresolvedAttendees.push(name);
+          }
+          continue;
+        }
+        const key = canonical.toLowerCase();
+        if (!seen.has(key)) {
+          seen.add(key);
+          resolved.push(canonical);
+        }
       }
+
+      if (JSON.stringify(resolved) !== JSON.stringify(meeting.attendees || [])) {
+        writebackUpdates.attendees = resolved;
+        dbUpdates.attendees = resolved;
+        if (unresolvedAttendees.length > 0) {
+          await persistAttendeeSuggestions(meeting, unresolvedAttendees);
+        }
+      } else if (unresolvedAttendees.length > 0) {
+        // Resolved set matches what's already linked — still surface the
+        // unknown names, but don't touch the note.
+        await persistAttendeeSuggestions(meeting, unresolvedAttendees);
+      }
+      routeMeta.unresolvedAttendees = unresolvedAttendees;
     }
 
     if (project !== undefined && project !== meeting.project) {
@@ -106,7 +169,10 @@ export async function PATCH(request, { params }) {
     }
 
     if (Object.keys(dbUpdates).length === 0) {
-      return NextResponse.json(meeting);
+      return NextResponse.json({
+        ...meeting,
+        unresolvedAttendees: routeMeta.unresolvedAttendees || [],
+      });
     }
 
     if (Object.keys(writebackUpdates).length > 0) {
@@ -135,7 +201,10 @@ export async function PATCH(request, { params }) {
       },
     });
 
-    return NextResponse.json(updatedMeeting);
+    return NextResponse.json({
+      ...updatedMeeting,
+      unresolvedAttendees: routeMeta.unresolvedAttendees || [],
+    });
   } catch (error) {
     console.error(`Error updating meeting ${id}:`, error);
     return NextResponse.json({ error: 'Failed to update meeting' }, { status: 500 });

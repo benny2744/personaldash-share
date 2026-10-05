@@ -1,0 +1,575 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Hermes + GBrain + WorkDash — Minimal Stack Tutorial (M1 Mac) / 极简栈教程</title>
+<style>
+:root{
+  --bg:#ffffff; --fg:#1a1a1a; --muted:#5b5b5b; --card:#f6f6f4; --border:#e2e0da;
+  --accent:#1f6feb; --accent-ink:#ffffff; --pill-agent:#e8f1ff; --pill-cmd:#e9f7ef;
+  --pill-ev:#fff4e0; --code-bg:#0f172a; --code-fg:#e8eefc; --warn:#8a3d00; --warn-bg:#fff3e2;
+  --ok:#0c6b2f; --ok-bg:#e7f6ec; --radius:12px; --max:1020px;
+}
+@media (prefers-color-scheme: dark){
+  :root{ --bg:#101014; --fg:#eceae4; --muted:#b3b0a8; --card:#18181d; --border:#2c2c33;
+    --accent:#5b9bff; --pill-agent:#16294d; --pill-cmd:#123324; --pill-ev:#3d2f10;
+    --code-bg:#000000; --code-fg:#e8eefc; --warn:#ffb86b; --warn-bg:#2b1d08; --ok:#7fe0a0; --ok-bg:#0e2a18; }
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.65 -apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",Arial,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif}
+.wrap{max-width:var(--max);margin:0 auto;padding:0 18px 120px}
+header.top{position:sticky;top:0;z-index:20;background:var(--bg);border-bottom:1px solid var(--border);padding:10px 0}
+.top-inner{max-width:var(--max);margin:0 auto;padding:0 18px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.brand{font-weight:700}
+.spacer{flex:1}
+button{font:inherit;cursor:pointer}
+.lang-toggle{display:flex;border:1px solid var(--border);border-radius:999px;overflow:hidden}
+.lang-toggle button{border:0;background:transparent;color:var(--fg);padding:7px 14px}
+.lang-toggle button[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink);font-weight:700}
+.progress{height:8px;background:var(--card);border:1px solid var(--border);border-radius:999px;overflow:hidden;margin:12px 0 4px}
+.progress > div{height:100%;width:0;background:var(--accent)}
+.progress-label{font-size:13px;color:var(--muted)}
+nav.toc{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:14px 18px;margin:18px 0}
+nav.toc ol{margin:6px 0;padding-left:22px}
+h1{font-size:30px;line-height:1.25;margin:22px 0 6px}
+h2{font-size:23px;margin:40px 0 8px;padding-top:14px;border-top:2px solid var(--border)}
+h3{font-size:18px;margin:26px 0 6px}
+.meta{color:var(--muted);font-size:14px}
+.card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;margin:14px 0}
+.warn{background:var(--warn-bg);border:1px solid var(--border);border-left:5px solid var(--warn);border-radius:10px;padding:12px 14px;margin:14px 0}
+.ok{background:var(--ok-bg);border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin:14px 0}
+table{border-collapse:collapse;width:100%;margin:12px 0;font-size:14.5px}
+th,td{border:1px solid var(--border);padding:8px 10px;text-align:left;vertical-align:top}
+th{background:var(--card)}
+code.inline{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:.88em;background:var(--card);border:1px solid var(--border);border-radius:6px;padding:1px 6px;white-space:nowrap}
+pre{position:relative;background:var(--code-bg);color:var(--code-fg);border-radius:12px;padding:44px 14px 14px;overflow:auto;font-size:13.5px;line-height:1.55}
+pre code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;white-space:pre}
+.copy{position:absolute;top:8px;right:8px;border:1px solid #ffffff55;background:#ffffff18;color:#fff;border-radius:8px;padding:4px 12px;font-size:13px}
+.copy:hover{background:#ffffff30}
+.pill{display:inline-block;font-size:12px;font-weight:700;letter-spacing:.04em;border-radius:999px;padding:2px 10px;margin:8px 0 2px;border:1px solid var(--border)}
+.pill.agent{background:var(--pill-agent)} .pill.cmd{background:var(--pill-cmd)} .pill.ev{background:var(--pill-ev)}
+.promptbox{border:1px dashed var(--accent);border-radius:12px;padding:12px 14px;margin:10px 0;background:var(--bg)}
+.checklist{list-style:none;padding:0;margin:10px 0}
+.checklist li{border:1px solid var(--border);border-radius:10px;padding:9px 12px;margin:8px 0;display:flex;gap:10px;align-items:flex-start;background:var(--bg)}
+.checklist input{margin-top:5px;transform:scale(1.25)}
+footer{margin-top:50px;color:var(--muted);font-size:13.5px;border-top:1px solid var(--border);padding-top:16px}
+a{color:var(--accent)}
+.diagram{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13px;background:var(--card);border:1px solid var(--border);border-radius:12px;padding:12px 14px;overflow:auto;white-space:pre}
+body[data-lang="en"] .zh{display:none!important}
+body[data-lang="zh"] .en{display:none!important}
+@media (max-width:640px){ h1{font-size:24px} table{font-size:13.5px} .wrap{padding:0 12px 100px} }
+</style>
+</head>
+<body data-lang="en">
+<header class="top">
+  <div class="top-inner">
+    <span class="brand"><span class="en">Hermes + GBrain + WorkDash</span><span class="zh">Hermes + GBrain + WorkDash</span></span>
+    <span class="meta"><span class="en">Minimal M1 Mac stack via coding-agent prompts</span><span class="zh">用编码智能体提示词搭建的 M1 Mac 极简栈</span></span>
+    <span class="spacer"></span>
+    <div class="lang-toggle" role="group" aria-label="Language / 语言">
+      <button id="btn-en" aria-pressed="true">English</button>
+      <button id="btn-zh" aria-pressed="false">中文</button>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+  <h1><span class="en">Bare-minimum running system: Hermes (custom models) + GBrain + WorkDash</span><span class="zh">可运行的极简系统：Hermes（自定义模型）+ GBrain + WorkDash</span></h1>
+  <p class="meta"><span class="en">Last verified: 2026-09-18 · Standalone file, no external assets · Audience: students and colleagues on Apple Silicon (M1+) Macs, driving OpenCode or a similar coding agent.</span><span class="zh">最后验证：2026-09-18 · 单文件离线可用，无外部资源 · 读者：在 Apple Silicon（M1 及更新）Mac 上，用 OpenCode 或同类编码智能体执行命令的学生与同事。</span></p>
+
+  <div class="progress" aria-hidden="true"><div id="bar"></div></div>
+  <div class="progress-label"><span class="en" id="pc-en">Progress: 0 of 0 steps</span><span class="zh" id="pc-zh">进度：共 0 步，已完成 0 步</span> · <button id="reset" style="border:0;background:none;color:var(--accent);padding:0"><span class="en">Reset checklist</span><span class="zh">重置清单</span></button></div>
+
+  <div class="warn"><strong><span class="en">Instructor action required before sharing.</span><span class="zh">老师在分发前必须处理的一项。</span></strong><br>
+  <span class="en">Replace the placeholder <code class="inline">INSTRUCTOR_WORKDASH_DOWNLOAD_URL</code> in Chapter 4 with the real student download link for the sanitized WorkDash share package. There is exactly one replacement point; everything else in this file is ready to distribute. Do not point students at any private production repository.</span><span class="zh">请把第 4 章中的占位符 <code class="inline">INSTRUCTOR_WORKDASH_DOWNLOAD_URL</code> 替换为脱敏版 WorkDash 学生安装包的真实下载链接。全文只有这一个替换点，其余内容可直接分发。不要把学生指向任何私有生产仓库。</span></div>
+
+  <nav class="toc" aria-label="Contents">
+    <strong><span class="en">Contents</span><span class="zh">目录</span></strong>
+    <ol>
+      <li><a href="#ch0"><span class="en">How to use this tutorial + operator contract</span><span class="zh">使用方法 + 操作员契约</span></a></li>
+      <li><a href="#ch1"><span class="en">1 · Orientation and preflight (M1 Mac)</span><span class="zh">1 · 全览与行前检查（M1 Mac）</span></a></li>
+      <li><a href="#ch2"><span class="en">2 · Hermes with custom endpoints and models</span><span class="zh">2 · Hermes 自定义端点与模型</span></a></li>
+      <li><a href="#ch3"><span class="en">3 · GBrain, then Hermes MCP wiring</span><span class="zh">3 · GBrain，再接入 Hermes MCP</span></a></li>
+      <li><a href="#ch4"><span class="en">4 · WorkDash joined to both</span><span class="zh">4 · WorkDash 与两者联调</span></a></li>
+      <li><a href="#ch5"><span class="en">5 · Proof, troubleshooting, what next</span><span class="zh">5 · 验证、排错与下一步</span></a></li>
+    </ol>
+  </nav>
+
+  <div class="card">
+    <strong><span class="en">Block labels used everywhere</span><span class="zh">全文统一的代码块标签</span></strong>
+    <table>
+      <tr><th><span class="en">Label</span><span class="zh">标签</span></th><th><span class="en">Meaning</span><span class="zh">含义</span></th></tr>
+      <tr><td><span class="pill agent">AGENT PROMPT · 智能体提示词</span></td><td><span class="en">Paste into OpenCode / your coding agent. It inspects first, then acts.</span><span class="zh">粘贴给 OpenCode / 编码智能体。它先检查，再动手。</span></td></tr>
+      <tr><td><span class="pill cmd">COMMAND · 可执行命令</span></td><td><span class="en">What the agent may run on your behalf. Do not run blindly yourself.</span><span class="zh">智能体可能替你运行的命令。不要自己盲目执行。</span></td></tr>
+      <tr><td><span class="pill ev">EXPECTED EVIDENCE · 预期证据</span></td><td><span class="en">Exact output or file the agent must report back before moving on.</span><span class="zh">进入下一步之前，智能体必须回传的输出或文件证据。</span></td></tr>
+    </table>
+  </div>
+
+<!-- ============ CH 0 ============ -->
+<h2 id="ch0"><span class="en">How to use this tutorial</span><span class="zh">使用方法</span></h2>
+<p><span class="en">You direct; the coding agent types. Work strictly in order (Hermes → GBrain → WorkDash), because each chapter's verification is the next chapter's prerequisite. Keep every service on loopback (<code class="inline">127.0.0.1</code>) — WorkDash ships with <strong>no built-in login</strong>, so anyone who can reach its port can read and rewrite your notes.</span><span class="zh">你动口，智能体动手。请严格按顺序做（Hermes → GBrain → WorkDash），因为每一章的验证就是下一章的前提。所有服务只监听回环地址（<code class="inline">127.0.0.1</code>）——WorkDash <strong>没有内置登录</strong>，谁能连上端口，谁就能读写你的笔记。</span></p>
+
+<p><span class="pill agent">AGENT PROMPT · 智能体提示词</span></p>
+<div class="promptbox"><div class="diagram">Operator contract — paste once at the start of every chapter, then add that chapter's task.
+
+操作员契约——每章开始先粘贴这一段，再追加本章任务。
+
+"Work inside my Mac only. Before changing anything, inspect the relevant
+files and report what you found. Never print secret values (API keys,
+tokens, passwords) — refer to them by NAME only. Preserve existing files;
+prefer the smallest edit. After each step, run the chapter's verification
+and paste the EXACT evidence (command output or file path + status). Stop
+on the first failed check and explain the symptom before proposing a fix."</div></div>
+
+<ul class="checklist">
+  <li><input type="checkbox" data-k="how"><span><span class="en"><strong>Setup:</strong> I pasted the operator contract and the agent acknowledged it.</span><span class="zh"><strong>准备：</strong>我已粘贴操作员契约，智能体已确认。</span></span></li>
+</ul>
+
+<!-- ============ CH 1 ============ -->
+<h2 id="ch1"><span class="en">1 · Orientation and preflight</span><span class="zh">1 · 全览与行前检查</span></h2>
+<p><span class="en">The minimal system has four moving parts. Markdown files are the source of truth; both indexes are rebuildable.</span><span class="zh">极简系统只有四个活动部件。Markdown 文件是唯一真相来源；两个索引都可以重建。</span></p>
+<div class="diagram">Browser  →  127.0.0.1:3001 (Caddy, loopback router)
+               ├─ /hermes/*  →  Hermes dashboard 127.0.0.1:9119 (chat brain)
+               └─ (other)    →  WorkDash app 127.0.0.1:3003 (notes UI + Postgres index)
+Hermes ⇄ GBrain MCP (stdio, same machine): chat can search your vault index
+WorkDash write-back ──POST /sync──▶ gbrain sync hook (optional) ──▶ re-index
+Vault: ~/brain (plain git repo of Markdown; mounted at /vault in the container)</div>
+
+<table>
+<tr><th><span class="en">Order</span><span class="zh">顺序</span></th><th><span class="en">Build</span><span class="zh">搭建</span></th><th><span class="en">Why this order</span><span class="zh">为什么是这个顺序</span></th></tr>
+<tr><td>1</td><td><span class="en">Hermes + one custom model</span><span class="zh">Hermes + 一个自定义模型</span></td><td><span class="en">Everything else is tested through chat.</span><span class="zh">后面所有验证都要经过对话完成。</span></td></tr>
+<tr><td>2</td><td><span class="en">GBrain + vault, wired into Hermes MCP</span><span class="zh">GBrain + 笔记库，并接入 Hermes MCP</span></td><td><span class="en">Gives the agent a searchable memory before the dashboard exists.</span><span class="zh">先让智能体拥有可搜索的记忆，再做面板。</span></td></tr>
+<tr><td>3</td><td><span class="en">WorkDash + Postgres over the same vault</span><span class="zh">WorkDash + Postgres，指向同一个库</span></td><td><span class="en">UI is a projection of files you already verified.</span><span class="zh">界面只是已验证文件的投影。</span></td></tr>
+<tr><td>4</td><td><span class="en">Same-origin proxy + sync hook (this tutorial's glue)</span><span class="zh">同源代理 + 同步钩子（本教程的粘合层）</span></td><td><span class="en">Makes /chat WebSocket work and keeps the index fresh.</span><span class="zh">让 /chat 的 WebSocket 连通，并保持索引新鲜。</span></td></tr>
+</table>
+
+<h3><span class="en">M1 Mac prerequisites</span><span class="zh">M1 Mac 前置条件</span></h3>
+<table>
+<tr><th><span class="en">Need</span><span class="zh">需要</span></th><th><span class="en">Check</span><span class="zh">检查</span></th><th><span class="en">Note (Apple Silicon)</span><span class="zh">说明（Apple Silicon）</span></th></tr>
+<tr><td>Git, Homebrew</td><td><code class="inline">git --version; brew --version</code></td><td><span class="en">Install the ARM64 Homebrew build.</span><span class="zh">请装 ARM64 版 Homebrew。</span></td></tr>
+<tr><td>Docker Desktop (Apple Silicon) + Compose v2</td><td><code class="inline">docker version; docker compose version</code></td><td><span class="en">Use ARM64 images; <code class="inline">host.docker.internal</code> reaches the Mac host from containers.</span><span class="zh">用 ARM64 镜像；容器内用 <code class="inline">host.docker.internal</code> 访问 Mac 本机。</span></td></tr>
+<tr><td>Bun (GBrain runtime)</td><td><code class="inline">bun --version</code></td><td><span class="en">Ensure <code class="inline">~/.bun/bin</code> is on PATH in every shell the agent uses.</span><span class="zh">确保智能体用的每个 shell 里 <code class="inline">~/.bun/bin</code> 都在 PATH 中。</span></td></tr>
+<tr><td>Node 22+ (WorkDash dev only)</td><td><code class="inline">node --version</code></td><td><span class="en">Only needed if running WorkDash outside Docker.</span><span class="zh">只在 Docker 外跑 WorkDash 才需要。</span></td></tr>
+<tr><td>Free loopback ports</td><td><code class="inline">3001, 3003, 4000, 9119, 9103, 5432</code></td><td><span class="en">Nothing else may listen on these yet.</span><span class="zh">这些端口必须尚未被占用。</span></td></tr>
+</table>
+
+<p><span class="pill agent">AGENT PROMPT · 智能体提示词</span></p>
+<div class="promptbox"><div class="diagram">"Preflight my M1 Mac. Check: git, brew, docker + compose v2, bun
+(~/.bun/bin on PATH), free ports 3001/3003/4000/9119/9103, and that
+Docker can pull ARM64 images. Report a PASS/FAIL table with exact
+versions. Do not install anything yet."</div></div>
+<p><span class="pill ev">EXPECTED EVIDENCE · 预期证据</span></p>
+<div class="promptbox"><div class="diagram">git 2.x · brew 4.x (arm64) · Docker Desktop with compose v2 ·
+bun 1.x · all six ports free (or a named owner per busy port)</div></div>
+<ul class="checklist">
+  <li><input type="checkbox" data-k="pre"><span><span class="en"><strong>Preflight passes.</strong> I have the evidence table; every row is PASS or has a named owner.</span><span class="zh"><strong>行前检查通过。</strong>我拿到了证据表，每行都是通过，或标明了占用者。</span></span></li>
+</ul>
+
+<!-- ============ CH 2 ============ -->
+<h2 id="ch2"><span class="en">2 · Hermes with custom endpoints and models</span><span class="zh">2 · Hermes 自定义端点与模型</span></h2>
+<p><span class="en">Hermes is configured in two places: <strong>model + endpoint</strong> live in <code class="inline">~/.hermes/config.yaml</code> (safe to show your agent); <strong>secrets</strong> live in <code class="inline">~/.hermes/.env</code> (never paste values into chat). Any OpenAI-compatible server exposing <code class="inline">POST /v1/chat/completions</code> works — a local server, a company gateway, or a multi-provider router such as LiteLLM. Prefer the interactive wizard first; hand-edit only when you need named providers or fallbacks.</span><span class="zh">Hermes 的配置分两处：<strong>模型与端点</strong>在 <code class="inline">~/.hermes/config.yaml</code>（可放心展示给智能体）；<strong>密钥</strong>在 <code class="inline">~/.hermes/.env</code>（绝不要把值粘贴进对话）。任何暴露 <code class="inline">POST /v1/chat/completions</code> 的 OpenAI 兼容服务都可用——本地服务、公司网关、LiteLLM 这类多提供商路由。优先用交互式向导；只有需要命名提供商或 fallback 时才手改文件。</span></p>
+<p><span class="en">Official references (version-sensitive — re-check if a command fails): </span><span class="zh">官方文档（随版本变化，命令失败时先复查）：</span> <a href="https://hermes-agent.nousresearch.com/docs/integrations/providers">LLM and Model Providers</a> · <a href="https://hermes-agent.nousresearch.com/docs/guides/local-llm-on-mac">Run Local LLMs on Mac</a> · <a href="https://hermes-agent.nousresearch.com/docs/user-guide/features/fallback-providers">Fallback Providers</a> · <a href="https://hermes-agent.nousresearch.com/docs/getting-started/installation">Installation</a></p>
+
+<h3><span class="en">2.1 Install and first-run wizard (safest path)</span><span class="zh">2.1 安装与首次向导（最稳的路）</span></h3>
+<p><span class="pill agent">AGENT PROMPT · 智能体提示词</span></p>
+<div class="promptbox"><div class="diagram">"Install Hermes with the official installer (Git is the only prerequisite),
+then run `hermes model`, choose 'Custom endpoint', and configure MY endpoint:
+base URL = &lt;my-base-url ending in /v1&gt;, model = &lt;my-model-id&gt;.
+Store my API key in ~/.hermes/.env under a clearly named variable and
+reference it from config — never echo the value. Then run `hermes doctor`
+and fix only missing prerequisites. End with `hermes model` showing my model."</div></div>
+<p><span class="pill cmd">COMMAND · 可执行命令</span></p>
+<pre><button class="copy">Copy</button><code>curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash
+hermes model          # choose "Custom endpoint", enter base URL + key + model
+hermes doctor
+hermes config get model 2>/dev/null || cat ~/.hermes/config.yaml | head -20</code></pre>
+
+<h3><span class="en">2.2 What the wizard actually writes (real structure)</span><span class="zh">2.2 向导到底写了什么（真实结构）</span></h3>
+<p><span class="en">One custom endpoint — the minimum. Replace the three placeholders only:</span><span class="zh">单个自定义端点——最小形态。只替换三个占位符：</span></p>
+<pre><button class="copy">Copy</button><code># ~/.hermes/config.yaml — minimal custom endpoint
+model:
+  provider: custom
+  default: YOUR-MODEL-ID
+  base_url: https://your-endpoint.example.com/v1
+  api_key: ${YOUR_KEY_ENV_NAME}</code></pre>
+<p><span class="en">Reusable named providers — the pattern that scales. Define each endpoint once under <code class="inline">providers:</code> with <code class="inline">key_env</code> (the <em>name</em> of the env var, not the secret), then select with <code class="inline">custom:&lt;name&gt;</code>:</span><span class="zh">可复用的命名提供商——能规模化的写法。每个端点在 <code class="inline">providers:</code> 下定义一次，用 <code class="inline">key_env</code> 写变量<em>名</em>（不是密钥本身），再用 <code class="inline">custom:&lt;名字&gt;</code> 选中：</span></p>
+<pre><button class="copy">Copy</button><code># ~/.hermes/config.yaml — named providers (keys stay in ~/.hermes/.env)
+providers:
+  mylab:
+    api: https://llm.internal.example.com/v1
+    key_env: MYLAB_API_KEY
+    transport: chat_completions
+  together:
+    api: https://api.together.xyz/v1
+    key_env: TOGETHER_API_KEY
+
+model:
+  provider: custom:mylab
+  default: YOUR-MODEL-ID
+
+# ~/.hermes/.env (values live ONLY here, one per line)
+MYLAB_API_KEY=sk-YOUR-KEY-HERE
+TOGETHER_API_KEY=sk-YOUR-KEY-HERE</code></pre>
+<p><span class="en">Optional: fallback chain and auxiliary models. Fallbacks engage on 429/529/503/connection failure; auxiliaries (compression, titles, vision) can each point at a cheaper or vision-capable model. Keep the primary working before adding these.</span><span class="zh">可选：fallback 链与辅助模型。Fallback 在 429/529/503/连接失败时启用；辅助任务（压缩、标题、视觉）可各自指向更便宜或支持视觉的模型。先调通主模型再加这些。</span></p>
+<pre><button class="copy">Copy</button><code># append to ~/.hermes/config.yaml only after the primary works
+fallback_providers:
+  - provider: custom:mylab
+    model: YOUR-FALLBACK-MODEL-ID
+    base_url: https://llm.internal.example.com/v1
+    key_env: MYLAB_API_KEY
+
+auxiliary:
+  compression:
+    provider: custom:mylab
+    model: YOUR-CHEAP-MODEL-ID
+    base_url: https://llm.internal.example.com/v1</code></pre>
+
+<h3><span class="en">2.3 Verify, test chat, roll back</span><span class="zh">2.3 验证、试聊、回滚</span></h3>
+<p><span class="pill agent">AGENT PROMPT · 智能体提示词</span></p>
+<div class="promptbox"><div class="diagram">"Verify my Hermes custom endpoint WITHOUT printing secrets: (1) probe
+&lt;base-url&gt;/models with my key and report HTTP status + whether my model
+ID is listed; (2) run `hermes doctor` and clear any 'Unknown provider'
+warning; (3) send one short chat ('reply with the word OK') and paste the
+reply. If /v1/models is unreachable, persist the model anyway only if the
+chat probe succeeds, and say so explicitly. Back up config.yaml before any
+edit so we can roll back."</div></div>
+<p><span class="pill cmd">COMMAND · 可执行命令</span></p>
+<pre><button class="copy">Copy</button><code>cp ~/.hermes/config.yaml ~/.hermes/config.yaml.bak-$(date +%F)
+curl -s -o /dev/null -w '%{http_code}\n' -H "Authorization: Bearer $YOUR_KEY_ENV_VALUE" \
+  https://your-endpoint.example.com/v1/models
+hermes doctor
+echo 'reply with the word OK' | hermes chat --no-tui 2>/dev/null || hermes --tui
+# roll back if broken:
+cp ~/.hermes/config.yaml.bak-$(date +%F) ~/.hermes/config.yaml</code></pre>
+<div class="warn"><span class="en"><strong>Gotchas students hit most:</strong> base URL must end in <code class="inline">/v1</code>; <code class="inline">key_env</code> is the variable <em>name</em>; legacy <code class="inline">LLM_MODEL</code> in <code class="inline">.env</code> is ignored — <code class="inline">config.yaml</code> is the source of truth; some providers (e.g. Perplexity) have no <code class="inline">/v1/models</code>, so a failing catalog probe does not always mean a broken chat.</span><span class="zh"><strong>学生最常踩的坑：</strong>base URL 必须以 <code class="inline">/v1</code> 结尾；<code class="inline">key_env</code> 写的是变量<em>名</em>；<code class="inline">.env</code> 里旧的 <code class="inline">LLM_MODEL</code> 已失效——<code class="inline">config.yaml</code> 才是真相来源；有些服务商（如 Perplexity）根本没有 <code class="inline">/v1/models</code>，目录探针失败不等于对话不可用。</span></div>
+<ul class="checklist">
+  <li><input type="checkbox" data-k="h1"><span><span class="en"><strong>Hermes replies through my endpoint.</strong> Agent pasted the OK reply + <code class="inline">hermes doctor</code> with no provider warnings.</span><span class="zh"><strong>Hermes 已走我的端点回复。</strong>智能体已粘贴 OK 回复和无警告的 <code class="inline">hermes doctor</code>。</span></span></li>
+  <li><input type="checkbox" data-k="h2"><span><span class="en"><strong>Secrets hygiene.</strong> Keys exist only in <code class="inline">~/.hermes/.env</code>; config references names, chat logs show none.</span><span class="zh"><strong>密钥卫生。</strong>密钥只在 <code class="inline">~/.hermes/.env</code> 里；配置只引用变量名，聊天记录里没有明文。</span></span></li>
+</ul>
+
+<!-- ============ CH 3 ============ -->
+<h2 id="ch3"><span class="en">3 · GBrain, then Hermes MCP wiring</span><span class="zh">3 · GBrain，再接入 Hermes MCP</span></h2>
+<p><span class="en">GBrain is two things: the <strong>software</strong> (CLI + index + MCP server, public repo <a href="https://github.com/garrytan/gbrain">garrytan/gbrain</a>) and your <strong>vault</strong> (a plain git repo of Markdown that stays the source of truth). Install the software from GitHub — never from the unrelated npm package also called “gbrain”. Full agent install guide: <a href="https://github.com/garrytan/gbrain/blob/master/INSTALL_FOR_AGENTS.md">INSTALL_FOR_AGENTS.md</a>.</span><span class="zh">GBrain 是两样东西：<strong>软件</strong>（CLI + 索引 + MCP 服务，公开仓库 <a href="https://github.com/garrytan/gbrain">garrytan/gbrain</a>）和你的 <strong>笔记库</strong>（纯 Markdown git 仓库，永远是真相来源）。软件只从 GitHub 装——不要装 npm 上那个同名的无关包。完整智能体安装指南见 <a href="https://github.com/garrytan/gbrain/blob/master/INSTALL_FOR_AGENTS.md">INSTALL_FOR_AGENTS.md</a>。</span></p>
+
+<h3><span class="en">3.1 Install + vault + first memory (PGLite smoke test)</span><span class="zh">3.1 安装 + 笔记库 + 第一次记忆（PGLite 烟雾测试）</span></h3>
+<p><span class="pill agent">AGENT PROMPT · 智能体提示词</span></p>
+<div class="promptbox"><div class="diagram">"Install GBrain from GitHub only (bun install -g
+github:garrytan/gbrain#latest-stable — never npm 'gbrain'). Create
+~/brain as a git repo with folders tasks/ people/ projects/ ideas/
+sources/ meetings/ plus a minimal AGENTS.md (brain-first: search before
+web; write Markdown files, never gbrain write-tools). Init a LOCAL
+keyless brain (gbrain init --pglite --no-embedding), seed 3 sample notes
+with Type: frontmatter, then run doctor + one remember/recall round trip
+with a unique phrase and report the phrase back."</div></div>
+<p><span class="pill cmd">COMMAND · 可执行命令</span></p>
+<pre><button class="copy">Copy</button><code>curl -fsSL https://bun.sh/install | bash
+export PATH="$HOME/.bun/bin:$PATH"
+bun install -g github:garrytan/gbrain#latest-stable
+gbrain --version && gbrain doctor
+mkdir -p ~/brain/{tasks,people,projects,ideas,sources,meetings} && git -C ~/brain init 2>/dev/null || true
+gbrain init --pglite --no-embedding
+gbrain remember "smoke test phrase amber-orbit-$(date +%s)" --entity projects/setup --provenance "setup test" --json
+gbrain recall projects/setup --json
+gbrain sync --repo ~/brain --yes && gbrain search "smoke test"</code></pre>
+<div class="warn"><span class="en"><strong>PGLite limits (know before you commit):</strong> single-writer only — stop <code class="inline">gbrain serve</code> during big syncs; Apple-silicon macOS 26 (Tahoe) WASM builds can crash. Treat PGLite as the two-second smoke test; the always-on stack below uses Postgres.</span><span class="zh"><strong>PGLite 的边界（先知道再用）：</strong>单写者——大同步时先停 <code class="inline">gbrain serve</code>；Apple Silicon 的 macOS 26（Tahoe）上 WASM 可能崩溃。把 PGLite 当两秒钟烟雾测试；下面常驻栈用 Postgres。</span></div>
+
+<h3><span class="en">3.2 Production-grade index: separate pgvector database</span><span class="zh">3.2 生产级索引：独立的 pgvector 数据库</span></h3>
+<p><span class="en">Why separate? Hermes MCP (<code class="inline">gbrain serve</code>) and dashboard-triggered syncs run concurrently — PGLite's single-writer lock fights that. A small local Postgres with pgvector (Docker, ARM64 image) removes the contention and keeps embeddings available. This database is <strong>different</strong> from WorkDash's Postgres in Chapter 4.</span><span class="zh">为什么要独立？Hermes MCP（<code class="inline">gbrain serve</code>）和面板触发的同步是并发跑的——PGLite 单写锁会打架。本地起一个带 pgvector 的小 Postgres（Docker ARM64 镜像）即可解决，还能用 embedding。这个库与第 4 章 WorkDash 的 Postgres <strong>是两个库</strong>。</span></p>
+<p><span class="pill agent">AGENT PROMPT · 智能体提示词</span></p>
+<div class="promptbox"><div class="diagram">"Give GBrain its own pgvector Postgres on my Mac: start pgvector/pgvector:pg16
+(ARM64) on 127.0.0.1:55432 with a stored password, point gbrain at it
+(gbrain init --prefer-postgres or the documented ladder), re-run sync +
+embed --stale over ~/brain, and prove concurrency: leave `gbrain serve`
+running while a second shell runs `gbrain sync --repo ~/brain`. Report
+`gbrain stats` page/chunk counts and both commands' exit statuses."</div></div>
+<p><span class="pill cmd">COMMAND · 可执行命令</span></p>
+<pre><button class="copy">Copy</button><code>docker run -d --name gbrain_postgres --restart unless-stopped \
+  -p 127.0.0.1:55432:5432 -e POSTGRES_USER=gbrain \
+  -e POSTGRES_PASSWORD='CHANGE-ME-STRONG' -e POSTGRES_DB=gbrain \
+  pgvector/pgvector:pg16
+gbrain init --prefer-postgres
+gbrain sync --repo ~/brain --yes && gbrain embed --stale
+gbrain stats</code></pre>
+
+<h3><span class="en">3.3 Wire GBrain into Hermes (stdio MCP, read-focused)</span><span class="zh">3.3 把 GBrain 接入 Hermes（本机 stdio MCP，读为主）</span></h3>
+<p><span class="en">Hermes spawns <code class="inline">gbrain serve</code> as a local subprocess — no server, tunnel, or token. The canonical command below performs a live handshake at add time and then asks <code class="inline">Enable all N tools? [Y/n]</code>: pipe <code class="inline">Y</code> in non-interactive runs, keep <code class="inline">--args</code> <strong>last</strong> (everything after it becomes server argv), and never trust the add command's exit code — it returns 0 even on failure.</span><span class="zh">Hermes 把 <code class="inline">gbrain serve</code> 当本地子进程拉起——不需要服务、隧道或 token。下面这条标准命令在添加时就会做真实握手，然后问 <code class="inline">Enable all N tools? [Y/n]</code>：非交互运行时用管道传 <code class="inline">Y</code>；<code class="inline">--args</code> 必须<strong>放最后</strong>（它后面的都会被当成服务端参数）；永远不要信这条命令的退出码——失败它也返回 0。</span></p>
+<p><span class="pill cmd">COMMAND · 可执行命令</span></p>
+<pre><button class="copy">Copy</button><code>printf 'Y\n' | hermes mcp add gbrain --env GBRAIN_HOME=$HOME --connect-timeout 60 \
+  --command "$(which gbrain)" --args serve
+hermes mcp list   # row must read: gbrain ... enabled (with a tick)
+hermes mcp test gbrain  # must exit 0 and print the discovered tool list</code></pre>
+<p><span class="en">Resulting block in <code class="inline">~/.hermes/config.yaml</code> (what “wired” looks like — keep the tool list read-only):</span><span class="zh">成功后 <code class="inline">~/.hermes/config.yaml</code> 里会出现这一段（“接好”长这样——工具列表保持只读）：</span></p>
+<pre><button class="copy">Copy</button><code>mcp_servers:
+  gbrain:
+    command: gbrain
+    args: [serve]
+    env: { GBRAIN_HOME: /Users/YOUR-NAME }
+    connect_timeout: 60.0
+    enabled: true</code></pre>
+<p><span class="pill agent">AGENT PROMPT · 智能体提示词</span></p>
+<div class="promptbox"><div class="diagram">"Register GBrain with Hermes using the canonical stdio command (GBRAIN_HOME=$HOME,
+--connect-timeout 60, --args serve LAST, pipe Y). Then HARD-verify: `hermes mcp
+list` shows gbrain enabled AND `hermes mcp test gbrain` exits 0. If either
+fails, show the failing output and the mcp_servers block — do not claim success
+on exit code alone. Fix PATH first if `which gbrain` is empty in Hermes'
+environment (export ~/.bun/bin)."</div></div>
+<div class="warn"><span class="en"><strong>PATH trap on macOS:</strong> Hermes launched from Finder/launchd may not see <code class="inline">~/.bun/bin</code>. Prefer an absolute <code class="inline">command:</code> path or export PATH in the MCP env so <code class="inline">gbrain serve</code> resolves.</span><span class="zh"><strong>macOS 的 PATH 坑：</strong>从 Finder/launchd 启动的 Hermes 可能看不到 <code class="inline">~/.bun/bin</code>。用绝对路径写 <code class="inline">command:</code>，或在 MCP 环境里先 export PATH，保证能找到 <code class="inline">gbrain serve</code>。</span></div>
+<ul class="checklist">
+  <li><input type="checkbox" data-k="g1"><span><span class="en"><strong>GBrain CLI works.</strong> <code class="inline">gbrain doctor</code> green; remember/recall round trip quoted back.</span><span class="zh"><strong>GBrain CLI 可用。</strong><code class="inline">gbrain doctor</code> 全绿；remember/recall 往返短语已回传。</span></span></li>
+  <li><input type="checkbox" data-k="g2"><span><span class="en"><strong>pgvector index live.</strong> <code class="inline">gbrain stats</code> shows my pages/chunks; sync works while serve runs.</span><span class="zh"><strong>pgvector 索引在线。</strong><code class="inline">gbrain stats</code> 有我的页面/分块数；serve 运行时同步正常。</span></span></li>
+  <li><input type="checkbox" data-k="g3"><span><span class="en"><strong>Hermes sees GBrain.</strong> <code class="inline">hermes mcp test gbrain</code> exits 0 with a tool list.</span><span class="zh"><strong>Hermes 已看到 GBrain。</strong><code class="inline">hermes mcp test gbrain</code> 退出 0 并列出工具。</span></span></li>
+</ul>
+
+<!-- ============ CH 4 ============ -->
+<h2 id="ch4"><span class="en">4 · WorkDash joined to both</span><span class="zh">4 · WorkDash 与两者联调</span></h2>
+<p><span class="en">WorkDash is the web UI over the same <code class="inline">~/brain</code> vault: Markdown stays canonical, Postgres is a rebuildable index, and web edits write frontmatter back to files. The share package is self-contained (Next.js standalone + sidecars + convenience Postgres). Configure it from its own <code class="inline">.env.example</code> — key files: <code class="inline">README.md</code>, <code class="inline">docker-compose.yml</code>, <code class="inline">lib/hermes/config.js</code> (reads <code class="inline">HERMES_DASHBOARD_URL / HERMES_DASHBOARD_SESSION_TOKEN / HERMES_BASE_PATH</code>), <code class="inline">lib/gbrainSync.js</code> (fire-and-forget <code class="inline">POST GBRAIN_SYNC_HOOK_URL</code>, safe no-op when unset).</span><span class="zh">WorkDash 是同一个 <code class="inline">~/brain</code> 库的网页界面：Markdown 仍是真相，Postgres 是可重建的索引，网页编辑会把 frontmatter 写回文件。学生包是自包含的（Next.js standalone + Sidecar + 自带 Postgres）。只按它自带的 <code class="inline">.env.example</code> 配置——关键文件：<code class="inline">README.md</code>、<code class="inline">docker-compose.yml</code>、<code class="inline">lib/hermes/config.js</code>（读 <code class="inline">HERMES_DASHBOARD_URL / HERMES_DASHBOARD_SESSION_TOKEN / HERMES_BASE_PATH</code>）、<code class="inline">lib/gbrainSync.js</code>（即发即忘 <code class="inline">POST GBRAIN_SYNC_HOOK_URL</code>，不设就是安全的空操作）。</span></p>
+
+<h3><span class="en">4.1 Get the share package (one placeholder)</span><span class="zh">4.1 拿到学生包（唯一的占位符）</span></h3>
+<p><span class="pill cmd">COMMAND · 可执行命令</span></p>
+<pre><button class="copy">Copy</button><code># INSTRUCTOR: replace the URL below before distributing.
+# 老师：分发前把下面链接换成真实的学生包地址。
+curl -L -o workdash-share.zip INSTRUCTOR_WORKDASH_DOWNLOAD_URL
+unzip workdash-share.zip -d ~/workdash-share && cd ~/workdash-share
+ls README.md .env.example docker-compose.yml Dockerfile lib/hermes/config.js lib/gbrainSync.js</code></pre>
+<p><span class="pill agent">AGENT PROMPT · 智能体提示词</span></p>
+<div class="promptbox"><div class="diagram">"Inspect ONLY ~/workdash-share (the sanitized student package). Read README.md,
+.env.example, docker-compose.yml, Dockerfile, lib/config.js (list the
+requireEnv production-required vars), lib/hermes/config.js and
+lib/gbrainSync.js. Do NOT read any other personal_dash checkout. Report:
+(1) required boot vars, (2) which compose services/mounts are mandatory vs
+optional for first boot, (3) the exact Hermes bootstrap + gbrain hook
+contracts. Then wait for my .env values."</div></div>
+
+<h3><span class="en">4.2 Minimal first boot: app + index DB + vault (skip the rest)</span><span class="zh">4.2 最小首启：应用 + 索引库 + 笔记库（其余跳过）</span></h3>
+<p><span class="en">Production boot hard-requires <code class="inline">DATABASE_URL, VAULT_PATH, MEETING_S3_ENDPOINT, MEETING_S3_PUBLIC_BASE, QWEN_FILETRANS_BASE_URL</code> (see <code class="inline">lib/config.js</code> <code class="inline">requireEnv</code>). For first boot, supply <strong>harmless loopback placeholders</strong> for the meeting trio and treat meeting upload as <strong>disabled</strong> until real providers exist. Also skip the reference compose's DingTalk mounts and the voice/LibreOffice sidecars — use a local override with only <code class="inline">app</code> + <code class="inline">db</code>.</span><span class="zh">生产启动硬要求 <code class="inline">DATABASE_URL、VAULT_PATH、MEETING_S3_ENDPOINT、MEETING_S3_PUBLIC_BASE、QWEN_FILETRANS_BASE_URL</code>（见 <code class="inline">lib/config.js</code> 的 <code class="inline">requireEnv</code>）。首次启动给会议三件套填<strong>无害的回环占位值</strong>，并把会议上传视为<strong>禁用</strong>，等有真实服务商再开。同时跳过参考 compose 里的 DingTalk 挂载和 voice/LibreOffice Sidecar——用本地 override 只起 <code class="inline">app</code> + <code class="inline">db</code>。</span></p>
+<p><span class="pill cmd">COMMAND · 可执行命令</span></p>
+<pre><button class="copy">Copy</button><code>cd ~/workdash-share && cp .env.example .env
+# --- fill in .env (minimum) ---
+# DATABASE_URL=postgresql://workdash:CHANGE-ME-STRONG@db:5432/workdash
+# POSTGRES_PASSWORD=CHANGE-ME-STRONG   (must match DATABASE_URL)
+# VAULT_HOST_PATH=/Users/YOUR-NAME/brain
+# MEETING_S3_ENDPOINT=http://127.0.0.1:9000        # placeholder: meetings DISABLED
+# MEETING_S3_PUBLIC_BASE=http://127.0.0.1:9000     # placeholder: meetings DISABLED
+# QWEN_FILETRANS_BASE_URL=http://127.0.0.1:9       # placeholder: meetings DISABLED
+# HERMES_DASHBOARD_URL=http://host.docker.internal:9119
+# HERMES_DASHBOARD_SESSION_TOKEN=&lt;from chapter 4.3&gt;
+# GBRAIN_SYNC_HOOK_URL=http://host.docker.internal:9103/sync  (or leave unset)
+cat &gt; docker-compose.override.yml &lt;&lt;'EOF'
+services:
+  app:
+    ports: ['127.0.0.1:3003:3001']
+    volumes: ['${VAULT_HOST_PATH}:/vault']
+    depends_on: { db: { condition: service_healthy } }
+  db:
+    image: postgres:16-alpine
+EOF
+docker compose up -d --build db app
+docker exec workdash-db pg_isready -U workdash
+curl -s -o /dev/null -w 'app HTTP %{http_code}\n' http://127.0.0.1:3003/</code></pre>
+<div class="warn"><span class="en"><strong>Two Postgres databases, two ports.</strong> WorkDash's index DB lives in compose (<code class="inline">db</code>); GBrain's pgvector DB from Chapter 3 is separate (<code class="inline">gbrain_postgres :55432</code>). Never point one app at the other's database. macOS bind-mount note: the container's <code class="inline">nextjs</code> user must be able to write your vault — if write-back fails with permission errors, fix host ownership/ACLs on <code class="inline">~/brain</code>, not the image.</span><span class="zh"><strong>两个 Postgres、两个端口。</strong>WorkDash 的索引库在 compose 里（<code class="inline">db</code>）；第 3 章 GBrain 的 pgvector 库是另一个（<code class="inline">gbrain_postgres :55432</code>）。绝不要互相指错。macOS 挂载注意：容器内 <code class="inline">nextjs</code> 用户必须能写你的库——写回报权限错时，去修本机 <code class="inline">~/brain</code> 的属主/ACL，别改镜像。</span></div>
+
+<h3><span class="en">4.3 Hermes dashboard + token, same-origin proxy</span><span class="zh">4.3 Hermes 面板 + token，同源代理</span></h3>
+<p><span class="en">The native <code class="inline">/chat</code> page talks to Hermes over same-origin WebSocket <code class="inline">{HERMES_BASE_PATH}/api/ws</code> (default <code class="inline">/hermes/api/ws</code>) plus a no-store REST bootstrap (<code class="inline">GET /api/hermes/bootstrap</code>). That requires: Hermes dashboard on loopback <code class="inline">:9119</code>, one persistent session token shared by both sides, and a loopback reverse proxy stripping the <code class="inline">/hermes</code> prefix. Without the proxy, chat fails (503 bootstrap / WS errors) — this is the most common “everything is up but chat is dead” cause.</span><span class="zh">原生 <code class="inline">/chat</code> 页走同源 WebSocket <code class="inline">{HERMES_BASE_PATH}/api/ws</code>（默认 <code class="inline">/hermes/api/ws</code>）加一个 no-store 的 REST 引导（<code class="inline">GET /api/hermes/bootstrap</code>）。这要求三件事：Hermes 面板在回环 <code class="inline">:9119</code>、两边共享一个持久 session token、一个回环反向代理剥掉 <code class="inline">/hermes</code> 前缀。没有代理，聊天必死（503 引导 / WS 报错）——这是“都起来了但聊不了”最常见的原因。</span></p>
+<p><span class="pill cmd">COMMAND · 可执行命令</span></p>
+<pre><button class="copy">Copy</button><code># 1) persistent token (generate ONCE, reuse everywhere)
+python3 -c 'import secrets; print(secrets.token_urlsafe(32))'
+# put it in BOTH ~/.hermes/.env and ~/workdash-share/.env as:
+# HERMES_DASHBOARD_SESSION_TOKEN=&lt;the-generated-value&gt;
+
+# 2) dashboard on loopback (foreground first to watch for errors)
+hermes dashboard --host 127.0.0.1 --port 9119 --no-open
+curl -s http://127.0.0.1:9119/api/status | head -c 300; echo
+
+# 3) loopback Caddy router :3001 (production-tested prefix behavior, Mac paths)
+brew install caddy
+cat &gt; ~/workdash-share/Caddyfile.local &lt;&lt;'EOF'
+{
+  auto_https off
+  admin off
+}
+:3001 {
+  bind 127.0.0.1
+  redir /hermes /hermes/ permanent
+  handle /hermes/* {
+    uri strip_prefix /hermes
+    reverse_proxy 127.0.0.1:9119 {
+      header_up Host 127.0.0.1:9119
+      header_up Origin http://127.0.0.1:9119
+      header_up X-Forwarded-Prefix /hermes
+    }
+  }
+  handle {
+    reverse_proxy 127.0.0.1:3003
+  }
+}
+EOF
+caddy run --config ~/workdash-share/Caddyfile.local
+# browse http://127.0.0.1:3001/  (app) and http://127.0.0.1:3001/hermes/ (dashboard)</code></pre>
+<p><span class="pill agent">AGENT PROMPT · 智能体提示词</span></p>
+<div class="promptbox"><div class="diagram">"Join WorkDash to Hermes: (1) generate ONE session token and write it to
+~/.hermes/.env AND ~/workdash-share/.env (HERMES_DASHBOARD_SESSION_TOKEN),
+restart/recreate so both sides load it; (2) start `hermes dashboard` on
+127.0.0.1:9119; (3) run the loopback Caddy router on :3001 with /hermes
+prefix-strip + Host/Origin rewrite; (4) prove it: `curl
+http://127.0.0.1:3001/api/hermes/bootstrap` returns configured:true (no
+token value in your report), and /chat opens a session. Keep everything
+loopback-only."</div></div>
+
+<h3><span class="en">4.4 Live GBrain freshness: tiny macOS sync hook (or manual sync)</span><span class="zh">4.4 GBrain 实时新鲜度：小而美的 macOS 同步钩子（或手动同步）</span></h3>
+<p><span class="en">Every dashboard write-back can <code class="inline">POST {"reason":"write-back"}</code> to <code class="inline">GBRAIN_SYNC_HOOK_URL</code> (3s timeout, debounced; unset = safe no-op). For the minimal Mac, run this loopback-only debounced hook — it implements the same <code class="inline">POST /sync</code> contract without any production health/takes/systemd machinery. Prefer manual sync if you would rather keep fewer processes.</span><span class="zh">面板每次写回都会向 <code class="inline">GBRAIN_SYNC_HOOK_URL</code> 发 <code class="inline">POST {"reason":"write-back"}</code>（3 秒超时，防抖；不设就是安全的空操作）。极简 Mac 跑下面这个只绑回环、防抖的小钩子即可——实现同样的 <code class="inline">POST /sync</code> 契约，不带生产环境的健康/(best)/systemd 全家桶。想少跑进程就选手动同步。</span></p>
+<p><span class="pill cmd">COMMAND · 可执行命令</span></p>
+<pre><button class="copy">Copy</button><code>cat &gt; ~/brain-sync-hook.py &lt;&lt;'EOF'
+#!/usr/bin/env python3
+"""Loopback-only debounced gbrain sync hook for Mac (minimal tutorial).
+POST /sync {"reason": "..."} -> runs gbrain sync+embed once after 10s quiet."""
+import json, subprocess, threading, time
+from http.server import BaseHTTPRequestHandler, HTTPServer
+PENDING = False; RUNNING = False; LAST = 0.0; RESULT = "never_run"
+def worker():
+    global PENDING, RUNNING, LAST, RESULT
+    time.sleep(10)
+    while True:
+        PENDING = False
+        try:
+            r = subprocess.run(["/bin/bash","-lc",
+                "export PATH=\"$HOME/.bun/bin:$PATH\"; gbrain sync --repo $HOME/brain --yes && gbrain embed --stale"],
+                timeout=1800, capture_output=True, text=True)
+            LAST = time.time(); RESULT = "ok" if r.returncode==0 else f"exit_{r.returncode}"
+        except Exception as e:
+            LAST = time.time(); RESULT = f"error: {e}"[:200]
+        if not PENDING:
+            RUNNING = False; return
+        time.sleep(10)
+class H(BaseHTTPRequestHandler):
+    def _j(self, s, o):
+        b = json.dumps(o).encode(); self.send_response(s)
+        self.send_header("Content-Type","application/json")
+        self.send_header("Content-Length",str(len(b))); self.end_headers(); self.wfile.write(b)
+    def do_POST(self):
+        global PENDING, RUNNING
+        if self.path.rstrip("/") == "/sync":
+            ln = int(self.headers.get("Content-Length") or 0)
+            if ln: self.rfile.read(ln)
+            PENDING = True
+            if not RUNNING:
+                RUNNING = True; threading.Thread(target=worker, daemon=True).start()
+            return self._j(202, {"status":"scheduled"})
+        return self._j(404, {})
+    def do_GET(self):
+        if self.path.rstrip("/") == "/status":
+            return self._j(200, {"ok":True,"last_result":RESULT,"last_completed":LAST})
+        return self._j(404, {})
+    def log_message(self,*a): pass
+HTTPServer(("127.0.0.1",9103),H).serve_forever()
+EOF
+chmod +x ~/brain-sync-hook.py
+python3 ~/brain-sync-hook.py &amp;  # or: launchd for auto-start (agent can add a plist)
+# then in ~/workdash-share/.env:
+# GBRAIN_SYNC_HOOK_URL=http://host.docker.internal:9103/sync
+# docker compose up -d app   # recreate so the app picks up the hook URL
+curl -s -X POST http://127.0.0.1:9103/sync -H 'Content-Type: application/json' -d '{"reason":"smoke"}'
+# fallback (simplest): leave GBRAIN_SYNC_HOOK_URL unset and run this after edits:
+# gbrain sync --repo ~/brain --yes &amp;&amp; gbrain embed --stale</code></pre>
+<ul class="checklist">
+  <li><input type="checkbox" data-k="w1"><span><span class="en"><strong>Dashboard boots.</strong> <code class="inline">http://127.0.0.1:3003/</code> loads; kanban shows seeded vault notes after the indexer scan.</span><span class="zh"><strong>面板启动。</strong><code class="inline">http://127.0.0.1:3003/</code> 可打开；索引扫描后看板出现种子笔记。</span></span></li>
+  <li><input type="checkbox" data-k="w2"><span><span class="en"><strong>Native chat works.</strong> <code class="inline">/api/hermes/bootstrap</code> is configured; a /chat session answers via my custom model.</span><span class="zh"><strong>原生聊天可用。</strong><code class="inline">/api/hermes/bootstrap</code> 显示已配置；/chat 会话用我的自定义模型作答。</span></span></li>
+  <li><input type="checkbox" data-k="w3"><span><span class="en"><strong>Index freshness chosen.</strong> Hook <code class="inline">POST :9103/sync → 202</code>, or deliberate manual sync.</span><span class="zh"><strong>新鲜度方案已定。</strong>钩子 <code class="inline">POST :9103/sync → 202</code>，或明确选择手动同步。</span></span></li>
+</ul>
+
+<!-- ============ CH 5 ============ -->
+<h2 id="ch5"><span class="en">5 · Proof, troubleshooting, what next</span><span class="zh">5 · 验证、排错与下一步</span></h2>
+<h3><span class="en">5.1 End-to-end proof (in dependency order)</span><span class="zh">5.1 端到端验证（按依赖顺序）</span></h3>
+<p><span class="pill agent">AGENT PROMPT · 智能体提示词</span></p>
+<div class="promptbox"><div class="diagram">"Prove the full loop in order and stop at the first failure: (1) Hermes chat
+answers via my custom model; (2) `gbrain search` finds my seeded note from
+CLI; (3) Hermes (gbrain MCP tool) retrieves the same note — quote the tool
+name used; (4) WorkDash kanban lists it; (5) /chat answers a question about
+it; (6) change one task Status in the dashboard, show the Markdown
+frontmatter diff in ~/brain, then show `gbrain search` finding the new
+status after sync. Paste exact evidence per step."</div></div>
+<ul class="checklist">
+  <li><input type="checkbox" data-k="e1"><span><span class="en">Custom model reply captured.</span><span class="zh">已拿到自定义模型的回复。</span></span></li>
+  <li><input type="checkbox" data-k="e2"><span><span class="en">GBrain CLI retrieval works.</span><span class="zh">GBrain 命令行检索可用。</span></span></li>
+  <li><input type="checkbox" data-k="e3"><span><span class="en">Hermes MCP retrieval works (tool named).</span><span class="zh">Hermes MCP 检索可用（已写明工具名）。</span></span></li>
+  <li><input type="checkbox" data-k="e4"><span><span class="en">WorkDash lists the note; /chat answers about it.</span><span class="zh">WorkDash 列出笔记；/chat 能回答它的问题。</span></span></li>
+  <li><input type="checkbox" data-k="e5"><span><span class="en">Write-back loop closes: dashboard edit → Markdown diff → GBrain finds it.</span><span class="zh">写回闭环：面板编辑 → Markdown 差异 → GBrain 能搜到。</span></span></li>
+</ul>
+
+<h3><span class="en">5.2 Symptom-based troubleshooting</span><span class="zh">5.2 按症状排错</span></h3>
+<table>
+<tr><th><span class="en">Symptom</span><span class="zh">症状</span></th><th><span class="en">Most likely cause → fix prompt</span><span class="zh">最可能的原因 → 修复提示词</span></th></tr>
+<tr><td><span class="en"><code class="inline">hermes doctor</code>: Unknown provider</span><span class="zh"><code class="inline">hermes doctor</code>：Unknown provider</span></td><td><span class="en">Typo in <code class="inline">provider: custom:&lt;name&gt;</code> vs <code class="inline">providers:</code> key → “diff the two names and fix the mismatch, then re-run doctor.”</span><span class="zh"><code class="inline">provider: custom:&lt;名&gt;</code> 与 <code class="inline">providers:</code> 的键拼写不一致 → “对比两个名字并改成一致，再跑 doctor。”</span></td></tr>
+<tr><td><span class="en">Chat 401/403; catalog probe failed</span><span class="zh">对话 401/403；目录探针失败</span></td><td><span class="en">Wrong key or <code class="inline">key_env</code> holds the secret instead of the name → “verify the env var NAME wiring and re-probe /v1/models without printing the value.”</span><span class="zh">密钥错，或 <code class="inline">key_env</code> 里写了密钥而不是变量名 → “只核对变量名 wiring，不打印值，重探 /v1/models。”</span></td></tr>
+<tr><td><span class="en"><code class="inline">gbrain</code>: command not found (in Hermes)</span><span class="zh">Hermes 里找不到 <code class="inline">gbrain</code></span></td><td><span class="en">MCP env lacks <code class="inline">~/.bun/bin</code> → “use the absolute gbrain path in <code class="inline">mcp_servers.gbrain.command</code> and re-test.”</span><span class="zh">MCP 环境缺 <code class="inline">~/.bun/bin</code> → “把 <code class="inline">mcp_servers.gbrain.command</code> 改成绝对路径再测。”</span></td></tr>
+<tr><td><span class="en"><code class="inline">hermes mcp add</code> “worked” but list/test fails</span><span class="zh"><code class="inline">hermes mcp add</code>“成功”但 list/test 失败</span></td><td><span class="en">Expected: exit code lies; <code class="inline">--args</code> was not last or handshake failed → “re-add with --args last, pipe Y, and gate on list+test.”</span><span class="zh">符合预期：退出码会撒谎；<code class="inline">--args</code> 没放最后或握手失败 → “按 --args 最后 + 传 Y 重加，以 list+test 为准。”</span></td></tr>
+<tr><td><span class="en">WorkDash container exits: missing env</span><span class="zh">WorkDash 容器退出：缺环境变量</span></td><td><span class="en">A <code class="inline">requireEnv</code> var is empty (often the meeting trio) → “paste the exact missing-var error and fill loopback placeholders.”</span><span class="zh">某个 <code class="inline">requireEnv</code> 变量为空（多为会议三件套）→ “粘贴确切的缺变量报错，补回环占位值。”</span></td></tr>
+<tr><td><span class="en">Kanban empty after boot</span><span class="zh">启动后看板是空的</span></td><td><span class="en">Indexer still scanning, or vault path/type mismatch → “check app logs for Initial scan complete, verify VAULT_HOST_PATH and Type:/folder typing.”</span><span class="zh">索引还在扫，或库路径/类型对不上 → “查日志 Initial scan complete，核对 VAULT_HOST_PATH 和 Type:/目录规则。”</span></td></tr>
+<tr><td><span class="en">/chat 503 or WS fails, both apps “up”</span><span class="zh">两边都“活着”，但 /chat 503 或 WS 失败</span></td><td><span class="en">No same-origin proxy, wrong token, or <code class="inline">HERMES_BASE_PATH</code> mismatch → “verify :3001 router, shared token on both sides, and bootstrap JSON.”</span><span class="zh">没起同源代理、token 两边不一致、或 <code class="inline">HERMES_BASE_PATH</code> 对不上 → “查 :3001 路由、两边 token、bootstrap JSON。”</span></td></tr>
+<tr><td><span class="en">Dashboard edit never reaches GBrain</span><span class="zh">面板改了，GBrain 没变化</span></td><td><span class="en">Hook unset/unreachable, or PGLite locked → “curl :9103/status, confirm hook URL uses host.docker.internal, or run manual sync.”</span><span class="zh">钩子没设/连不上，或 PGLite 被锁 → “curl :9103/status，确认钩子地址用 host.docker.internal，或手动同步。”</span></td></tr>
+<tr><td><span class="en">M1 Docker weirdness (arch/exec, slow bind mounts)</span><span class="zh">M1 Docker 怪象（架构/exec、挂载慢）</span></td><td><span class="en">x86_64 image pulled or file-sharing lag → “pin ARM64 tags, keep the vault small, exclude node_modules/.next from sync.”</span><span class="zh">拉到 x86_64 镜像或文件共享慢 → “锁定 ARM64 标签，库保持小巧，同步排除 node_modules/.next。”</span></td></tr>
+</table>
+
+<h3><span class="en">5.3 Customize next (explicitly optional)</span><span class="zh">5.3 下一步定制（明确可选）</span></h3>
+<p><span class="en">The bare minimum ends here. Each extension below is a separate agent task — do them one at a time, only after the proof checklist is fully green.</span><span class="zh">极简栈到此结束。下面每个扩展都是独立任务——等验证清单全绿，一次只做一个。</span></p>
+<div class="promptbox"><div class="diagram">Expansion prompts (one at a time · 一次一个):
+- Voice: "Wire the pipecat-voice sidecar (Qwen realtime ASR/TTS) behind the
+  existing :3001 router. Keep keys server-side; prove mic→draft→reply→TTS."
+- Meetings: "Configure REAL S3 + Qwen filetrans + meeting LLM, replacing my
+  loopback placeholders. Upload a 10-second clip and prove note + proposed tasks."
+- OpenCode formatters: "Set MEETING_FORMATTER=opencode with `opencode serve`
+  on the host, copy agents from lib/meetingPipeline/opencode/, prove one format."
+- Remote access: "Put :3001 behind TLS + real authentication (reverse proxy).
+  Prove the app is unreachable without login and chat still works with it."
+- Backups: "Add vault git pushes + Postgres volume backups + a restore drill."
+- Personalize: "Set APP_NAME/MEETING_TYPES and vault typing (Type: + folders)
+  to match my courses/projects; re-index and prove board filters."</div></div>
+
+<div class="ok"><strong><span class="en">Safety recap.</span><span class="zh">安全回顾。</span></strong><br>
+<span class="en">Keep everything on <code class="inline">127.0.0.1</code> until you add real authentication. Secrets live in <code class="inline">~/.hermes/.env</code> and <code class="inline">~/workdash-share/.env</code> (both git-ignored) — never in prompts, screenshots, or this HTML. Version drift prompt for your agent: “The commands above were verified 2026-09-18; if any fail, check the linked official docs for the current flags and report what changed before improvising.”</span><span class="zh">加上真正的身份验证之前，所有东西都留在 <code class="inline">127.0.0.1</code>。密钥只放在 <code class="inline">~/.hermes/.env</code> 和 <code class="inline">~/workdash-share/.env</code>（都是 git 忽略的）——绝不进提示词、截图或本 HTML。版本漂移提示词：“上述命令验证于 2026-09-18；若有失败，先查所附官方文档的最新 flags，汇报变化再动手，不要即兴发挥。”</span></div>
+
+<footer>
+<span class="en">Sources: Hermes docs (Providers · Local LLM on Mac · Fallback Providers · Installation · Dashboard), GBrain repo + INSTALL_FOR_AGENTS.md + MCP/HERMES.md, and the sanitized WorkDash share package (README, .env.example, docker-compose.yml, lib/config.js, lib/hermes/config.js, lib/gbrainSync.js). Production paths, credentials, hostnames, and private repo URLs were deliberately excluded.</span><span class="zh">来源：Hermes 官方文档（Providers · Local LLM on Mac · Fallback Providers · Installation · Dashboard）、GBrain 仓库 + INSTALL_FOR_AGENTS.md + MCP/HERMES.md，以及脱敏 WorkDash 学生包（README、.env.example、docker-compose.yml、lib/config.js、lib/hermes/config.js、lib/gbrainSync.js）。生产路径、凭据、主机名与私有仓库地址已刻意排除。</span>
+</footer>
+</div>
+
+<script>
+(function(){
+  var KEY='wd-tutorial-lang', CK='wd-tutorial-checks';
+  function setLang(l){
+    document.body.dataset.lang = (l==='zh')?'zh':'en';
+    document.documentElement.lang = (l==='zh')?'zh-CN':'en';
+    try{localStorage.setItem(KEY,document.body.dataset.lang);}catch(e){}
+    document.getElementById('btn-en').setAttribute('aria-pressed', document.body.dataset.lang==='en');
+    document.getElementById('btn-zh').setAttribute('aria-pressed', document.body.dataset.lang==='zh');
+  }
+  document.getElementById('btn-en').addEventListener('click',function(){setLang('en');});
+  document.getElementById('btn-zh').addEventListener('click',function(){setLang('zh');});
+  try{var s=localStorage.getItem(KEY); if(s==='zh'||s==='en') setLang(s);}catch(e){}
+  document.querySelectorAll('pre').forEach(function(pre){
+    var btn=pre.querySelector('.copy'); if(!btn) return;
+    btn.addEventListener('click',function(){
+      var t=pre.querySelector('code').innerText;
+      function done(ok){ btn.textContent = ok ? 'Copied ✓ / 已复制' : 'Copy failed'; setTimeout(function(){btn.textContent='Copy';},1600); }
+      if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(t).then(function(){done(true);},function(){done(false);});}
+      else{var ta=document.createElement('textarea');ta.value=t;document.body.appendChild(ta);ta.select();try{document.execCommand('copy');done(true);}catch(e){done(false);}ta.remove();}
+    });
+  });
+  var boxes=Array.prototype.slice.call(document.querySelectorAll('.checklist input[type=checkbox]'));
+  var bar=document.getElementById('bar');
+  function paint(){
+    var n=boxes.filter(function(b){return b.checked;}).length, t=boxes.length;
+    bar.style.width=(t?Math.round(n/t*100):0)+'%';
+    document.getElementById('pc-en').textContent='Progress: '+n+' of '+t+' steps';
+    document.getElementById('pc-zh').textContent='进度：共 '+t+' 步，已完成 '+n+' 步';
+  }
+  var saved={}; try{saved=JSON.parse(localStorage.getItem(CK)||'{}');}catch(e){}
+  boxes.forEach(function(b){ if(saved[b.dataset.k]) b.checked=true; b.addEventListener('change',function(){ var o={}; boxes.forEach(function(x){o[x.dataset.k]=x.checked;}); try{localStorage.setItem(CK,JSON.stringify(o));}catch(e){} paint(); }); });
+  document.getElementById('reset').addEventListener('click',function(){ boxes.forEach(function(b){b.checked=false;}); try{localStorage.removeItem(CK);}catch(e){} paint(); });
+  paint();
+})();
+</script>
+</body>
+</html>

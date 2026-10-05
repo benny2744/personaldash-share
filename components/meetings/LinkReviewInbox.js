@@ -1,7 +1,13 @@
 'use client';
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Inbox, X } from 'lucide-react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
+import { Inbox, Trash2, X } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -35,6 +41,13 @@ export default function LinkReviewInbox({ open, onClose, onPendingCount }) {
   const [loading, setLoading] = useState(false);
   const [busyId, setBusyId] = useState(null);
   const [entityCache, setEntityCache] = useState({});
+  const [confirmingClear, setConfirmingClear] = useState(false);
+  const [clearing, setClearing] = useState(false);
+  const confirmTimerRef = useRef(null);
+
+  useEffect(() => {
+    return () => clearTimeout(confirmTimerRef.current);
+  }, []);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -51,6 +64,37 @@ export default function LinkReviewInbox({ open, onClose, onPendingCount }) {
       setLoading(false);
     }
   }, [onPendingCount]);
+
+  const clearAll = useCallback(async () => {
+    setClearing(true);
+    try {
+      const res = await fetch('/api/link-suggestions/clear-all', {
+        method: 'POST',
+      });
+      if (res.ok) {
+        setConfirmingClear(false);
+        await refresh();
+      } else {
+        const data = await res.json().catch(() => ({}));
+        console.error('[link-review] clear-all failed', data);
+      }
+    } catch {
+      /* ignore */
+    } finally {
+      setClearing(false);
+    }
+  }, [refresh]);
+
+  const onClearAllClick = useCallback(() => {
+    if (confirmingClear) {
+      clearTimeout(confirmTimerRef.current);
+      clearAll();
+      return;
+    }
+    setConfirmingClear(true);
+    clearTimeout(confirmTimerRef.current);
+    confirmTimerRef.current = setTimeout(() => setConfirmingClear(false), 3000);
+  }, [confirmingClear, clearAll]);
 
   useEffect(() => {
     if (open) refresh();
@@ -124,14 +168,36 @@ export default function LinkReviewInbox({ open, onClose, onPendingCount }) {
             </h2>
             <Badge variant="secondary">{suggestions.length} pending</Badge>
           </div>
-          <Button
-            variant="ghost"
-            className="min-h-11 px-3 text-xs"
-            onClick={onClose}
-            aria-label="Close Link Review"
-          >
-            <X size={13} />
-          </Button>
+          <div className="flex items-center gap-1">
+            {suggestions.length > 0 && (
+              <Button
+                variant="ghost"
+                className={`min-h-11 px-3 text-xs ${
+                  confirmingClear
+                    ? 'text-[var(--text-primary)]'
+                    : 'text-[var(--text-muted)]'
+                }`}
+                disabled={clearing || busyId !== null}
+                onClick={onClearAllClick}
+                aria-label={
+                  confirmingClear
+                    ? 'Confirm clearing all pending suggestions'
+                    : 'Clear all pending suggestions'
+                }
+              >
+                <Trash2 size={13} />
+                {confirmingClear ? 'Confirm clear all?' : 'Clear all'}
+              </Button>
+            )}
+            <Button
+              variant="ghost"
+              className="min-h-11 px-3 text-xs"
+              onClick={onClose}
+              aria-label="Close Link Review"
+            >
+              <X size={13} />
+            </Button>
+          </div>
         </div>
 
         {loading && suggestions.length === 0 ? (

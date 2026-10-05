@@ -6,7 +6,7 @@ import ProjectDetailClient from '@/components/projects/ProjectDetailClient';
 export const dynamic = 'force-dynamic';
 
 export const metadata = {
-  title: 'Project - PersonalDash',
+  title: 'Project - WorkDash',
 };
 
 export default async function ProjectDetailPage({ params }) {

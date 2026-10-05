@@ -1,25 +1,23 @@
 import React, { useMemo, useRef } from 'react';
 import { Badge } from '@/components/ui/badge';
-import { Lightbulb, Target, TrendingUp } from 'lucide-react';
+import {
+  FolderOpen,
+  Gauge,
+  Lightbulb,
+  Target,
+  TrendingUp,
+} from 'lucide-react';
 import { cn } from '@/lib/utils';
-
-const STATUS_VARIANT = {
-  backburner: 'status-backburner',
-  exploring: 'status-exploring',
-  inprogress: 'status-doing',
-  done: 'status-done',
-  abandoned: 'status-abandoned',
-};
+import { IDEA_STATUS_VARIANTS } from '@/lib/domain';
 
 export default function IdeaCard({ idea, onDragStart, onOpen, onMove, statusOptions = [] }) {
   const hasMoveOptions = typeof onMove === 'function' && statusOptions.length > 0;
-  const normalizedStatus = (idea.status || 'backburner').toLowerCase().replace(/\s+/g, '');
+  const statusKey = (idea.status || 'Captured').toLowerCase().replace(/\s+/g, '');
+  const statusVariant = IDEA_STATUS_VARIANTS[idea.status] || 'secondary';
   const moveValue = useMemo(
-    () => (statusOptions.some((option) => option.value === normalizedStatus) ? normalizedStatus : statusOptions[0]?.value || normalizedStatus),
-    [normalizedStatus, statusOptions]
+    () => (statusOptions.some((option) => option.value === statusKey) ? statusKey : statusOptions[0]?.value || statusKey),
+    [statusKey, statusOptions]
   );
-  const statusKey = (idea.status || 'backburner').toLowerCase().replace(/\s+/g, '');
-  const statusVariant = STATUS_VARIANT[statusKey] || 'secondary';
   const dragStartPos = useRef(null);
   const didDrag = useRef(false);
 
@@ -65,8 +63,9 @@ export default function IdeaCard({ idea, onDragStart, onOpen, onMove, statusOpti
         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]'
       )}
     >
-      <div className="mb-3">
-        <Badge variant={statusVariant} dot>{idea.status || 'Backburner'}</Badge>
+      <div className="mb-3 flex flex-wrap items-center gap-1.5">
+        <Badge variant={statusVariant} dot>{idea.status || 'Captured'}</Badge>
+        {idea.context && <Badge variant="outline">{idea.context}</Badge>}
       </div>
 
       <h3 className="mb-3 text-base font-semibold leading-tight text-[var(--text-primary)] transition-colors duration-100 group-hover:text-[var(--accent)]">
@@ -78,9 +77,19 @@ export default function IdeaCard({ idea, onDragStart, onOpen, onMove, statusOpti
           <Lightbulb size={13} className="shrink-0" />
           <span className="truncate">{idea.domain || 'No domain'}</span>
         </div>
+        {idea.project && (
+          <div className="flex items-center gap-1.5">
+            <FolderOpen size={13} className="shrink-0" />
+            <span className="truncate">{idea.project}</span>
+          </div>
+        )}
         <div className="flex items-center gap-1.5">
           <TrendingUp size={13} className="shrink-0" />
           <span className="truncate">Impact: {idea.impact || 'Unspecified'}</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <Gauge size={13} className="shrink-0" />
+          <span className="truncate">Confidence: {idea.confidence || 'Unspecified'}</span>
         </div>
         <div className="flex items-center gap-1.5">
           <Target size={13} className="shrink-0" />

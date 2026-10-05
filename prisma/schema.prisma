@@ -52,7 +52,9 @@ model Task {
   status       String    @default("Todo")
   whenDate     DateTime? @map("when_date")
   priority     String    @default("Medium")
+  context      String?
   project      String?
+  area         String?
   domain       String?
   courses      String[]  @default([])
   people       String[]  @default([])
@@ -68,6 +70,8 @@ model Task {
   @@index([whenDate])
   @@index([priority])
   @@index([project])
+  @@index([context])
+  @@index([area])
   @@index([domain])
   @@map("tasks")
 }
@@ -103,11 +107,15 @@ model Idea {
   note   Note   @relation(fields: [noteId], references: [id], onDelete: Cascade)
 
   title        String
-  status       String    @default("Backburner")
+  status       String    @default("Captured")
   domain       String?
+  context      String?
   impact       String?
+  confidence   String?
   effort       String?
+  project      String?
   ideaCreated  DateTime? @map("idea_created")
+  reviewedAt   DateTime? @map("reviewed_at")
   notesSummary String?   @map("notes_summary")
   tags         String[]  @default([])
 
@@ -116,6 +124,8 @@ model Idea {
 
   @@index([status])
   @@index([domain])
+  @@index([context])
+  @@index([project])
   @@map("ideas")
 }
 

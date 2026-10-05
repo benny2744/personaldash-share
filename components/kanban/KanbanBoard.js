@@ -1,7 +1,8 @@
 'use client';
 
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import useSWR from 'swr';
+import { X } from 'lucide-react';
 import KanbanColumn from './KanbanColumn';
 import TaskDrawer from './TaskDrawer';
 import FilterBar from './FilterBar';
@@ -34,16 +35,103 @@ function getTaskDateTimestamp(task) {
   return Number.isFinite(createdTs) ? createdTs : null;
 }
 
+function readBoardFilters() {
+  if (typeof window === 'undefined') return {};
+  const params = new URLSearchParams(window.location.search);
+  return Object.fromEntries(
+    [
+      'context',
+      'project',
+      'priority',
+      'domain',
+      'area',
+      'tag',
+      'person',
+      'course',
+      'created',
+      'sort',
+      'q',
+    ]
+      .filter((key) => params.has(key))
+      .map((key) => [key, params.get(key)]),
+  );
+}
+
 export default function KanbanBoard() {
   const { data: tasks, error, mutate } = useSWR('/api/tasks', fetchJson);
   const [search, setSearch] = useState('');
+  const [context, setContext] = useState('all');
   const [project, setProject] = useState('all');
   const [priority, setPriority] = useState('all');
+  const [domain, setDomain] = useState('all');
+  const [area, setArea] = useState('all');
+  const [tag, setTag] = useState('all');
+  const [person, setPerson] = useState('all');
+  const [course, setCourse] = useState('all');
   const [createdFilter, setCreatedFilter] = useState('all');
   const [sortBy, setSortBy] = useState('priority');
+  const [urlReady, setUrlReady] = useState(false);
   const [drawerTask, setDrawerTask] = useState(null);
   const [activeMobileStatus, setActiveMobileStatus] = useState('proposed');
   const [archivePending, setArchivePending] = useState(false);
+
+  useEffect(() => {
+    const params = readBoardFilters();
+    setSearch(params.q || '');
+    setContext(params.context || 'all');
+    setProject(params.project || 'all');
+    setPriority(params.priority || 'all');
+    setDomain(params.domain || 'all');
+    setArea(params.area || 'all');
+    setTag(params.tag || 'all');
+    setPerson(params.person || 'all');
+    setCourse(params.course || 'all');
+    setCreatedFilter(params.created || 'all');
+    setSortBy(params.sort || 'priority');
+    setUrlReady(true);
+  }, []);
+
+  useEffect(() => {
+    if (!urlReady) return;
+    const params = new URLSearchParams(window.location.search);
+    const filters = {
+      q: search.trim(),
+      context,
+      project,
+      priority,
+      domain,
+      area,
+      tag,
+      person,
+      course,
+      created: createdFilter,
+      sort: sortBy,
+    };
+    for (const [key, value] of Object.entries(filters)) {
+      if (!value || value === 'all' || (key === 'sort' && value === 'priority'))
+        params.delete(key);
+      else params.set(key, value);
+    }
+    const query = params.toString();
+    window.history.replaceState(
+      null,
+      '',
+      `${window.location.pathname}${query ? `?${query}` : ''}${window.location.hash}`,
+    );
+  }, [
+    urlReady,
+    search,
+    context,
+    project,
+    priority,
+    domain,
+    area,
+    tag,
+    person,
+    course,
+    createdFilter,
+    sortBy,
+  ]);
 
   const handleCardOpen = useCallback((task) => setDrawerTask(task), []);
   const handleDrawerClose = useCallback(() => setDrawerTask(null), []);
@@ -96,17 +184,51 @@ export default function KanbanBoard() {
 
   const STATUS_OPTIONS = TASK_BOARD_STATUSES;
   const STATUSES = STATUS_OPTIONS.map((status) => status.value);
-  const projects = [
-    'all',
-    ...new Set(tasks.map((task) => task.project).filter(Boolean)),
-  ];
+  const uniqueValues = (key) =>
+    [...new Set(tasks.map((task) => task[key]).filter(Boolean))].sort((a, b) =>
+      a.localeCompare(b, undefined, { sensitivity: 'base' }),
+    );
+  const projects = uniqueValues('project');
+  const domains = uniqueValues('domain');
+  const areas = uniqueValues('area');
+  const tags = [
+    ...new Set(
+      tasks
+        .flatMap((task) => task.tags || [])
+        .filter((tag) => tag !== 'type/task'),
+    ),
+  ].sort();
+  const people = [
+    ...new Set(tasks.flatMap((task) => task.people || [])),
+  ].sort();
+  const courses = [
+    ...new Set(tasks.flatMap((task) => task.courses || [])),
+  ].sort();
 
   const filtered = tasks.filter((task) => {
     const status = normalizeStatus(task.status);
     const statusOk = STATUSES.includes(status);
-    const projectOk = project === 'all' || task.project === project;
+    const contextOk =
+      context === 'all'
+        ? true
+        : context === 'unclassified'
+          ? !task.context
+          : task.context === context;
+    const projectOk =
+      project === 'all'
+        ? true
+        : project === 'has-project'
+          ? Boolean(task.project)
+          : project === 'no-project'
+            ? !task.project
+            : task.project === project;
     const priorityOk =
       priority === 'all' || (task.priority || '').toLowerCase() === priority;
+    const domainOk = domain === 'all' || task.domain === domain;
+    const areaOk = area === 'all' || task.area === area;
+    const tagOk = tag === 'all' || (task.tags || []).includes(tag);
+    const personOk = person === 'all' || (task.people || []).includes(person);
+    const courseOk = course === 'all' || (task.courses || []).includes(course);
     const titleOk = (task.title || '')
       .toLowerCase()
       .includes(search.toLowerCase());
@@ -115,7 +237,19 @@ export default function KanbanBoard() {
       dateTs === null
         ? createdFilter === 'all'
         : (CREATED_FILTERS[createdFilter] || CREATED_FILTERS.all)(dateTs);
-    return statusOk && projectOk && priorityOk && titleOk && createdOk;
+    return (
+      statusOk &&
+      contextOk &&
+      projectOk &&
+      priorityOk &&
+      domainOk &&
+      areaOk &&
+      tagOk &&
+      personOk &&
+      courseOk &&
+      titleOk &&
+      createdOk
+    );
   });
 
   const sorted = [...filtered].sort((a, b) => {
@@ -266,8 +400,14 @@ export default function KanbanBoard() {
 
   const activeFilterCount = [
     search.trim().length > 0,
+    context !== 'all',
     project !== 'all',
     priority !== 'all',
+    domain !== 'all',
+    area !== 'all',
+    tag !== 'all',
+    person !== 'all',
+    course !== 'all',
     createdFilter !== 'all',
     sortBy !== 'priority',
   ].filter(Boolean).length;
@@ -284,8 +424,37 @@ export default function KanbanBoard() {
     </Button>
   );
 
+  const activeChips = [
+    search.trim() && ['Search', search, () => setSearch('')],
+    context !== 'all' && [
+      'Context',
+      context === 'unclassified' ? 'Unclassified' : context,
+      () => setContext('all'),
+    ],
+    project !== 'all' && [
+      'Project',
+      project === 'has-project'
+        ? 'Has project'
+        : project === 'no-project'
+          ? 'No project'
+          : project,
+      () => setProject('all'),
+    ],
+    priority !== 'all' && ['Priority', priority, () => setPriority('all')],
+    domain !== 'all' && ['Domain', domain, () => setDomain('all')],
+    area !== 'all' && ['Area', area, () => setArea('all')],
+    tag !== 'all' && ['Tag', tag, () => setTag('all')],
+    person !== 'all' && ['Person', person, () => setPerson('all')],
+    course !== 'all' && ['Course', course, () => setCourse('all')],
+    createdFilter !== 'all' && [
+      'Date',
+      createdFilter,
+      () => setCreatedFilter('all'),
+    ],
+  ].filter(Boolean);
+
   return (
-    <div className="flex h-full flex-col gap-6">
+    <div className="flex h-full flex-col gap-3">
       <FilterBar
         searchValue={search}
         onSearchChange={setSearch}
@@ -295,24 +464,117 @@ export default function KanbanBoard() {
         totalCount={tasks.length}
         onClear={() => {
           setSearch('');
+          setContext('all');
           setProject('all');
           setPriority('all');
+          setDomain('all');
+          setArea('all');
+          setTag('all');
+          setPerson('all');
+          setCourse('all');
           setCreatedFilter('all');
           setSortBy('priority');
         }}
       >
         <Select
-          value={project}
-          onChange={(event) => setProject(event.target.value)}
+          value={context}
+          onChange={(event) => setContext(event.target.value)}
           wrapperClassName="w-full md:w-40"
           className="h-8 text-xs"
         >
+          <option value="all">All contexts</option>
+          <option value="Work">Work</option>
+          <option value="Personal">Personal</option>
+          <option value="Side Projects">Side Projects</option>
+          <option value="unclassified">Unclassified</option>
+        </Select>
+        <Select
+          value={project}
+          onChange={(event) => setProject(event.target.value)}
+          wrapperClassName="w-full md:w-44"
+          className="h-8 text-xs"
+        >
+          <option value="all">All projects</option>
+          <option value="has-project">Has project</option>
+          <option value="no-project">No project</option>
           {projects.map((item) => (
             <option key={item} value={item}>
-              {item === 'all' ? 'All projects' : item}
+              {item}
             </option>
           ))}
         </Select>
+        <details className="w-full md:w-auto">
+          <summary className="flex h-8 cursor-pointer list-none items-center justify-center rounded-lg border border-[color:color-mix(in_srgb,var(--outline)_10%,transparent)] px-3 text-xs text-[var(--text-secondary)] hover:bg-[var(--surface-container-high)]">
+            More filters
+          </summary>
+          <div className="mt-2 flex flex-wrap gap-2 rounded-lg border border-[color:color-mix(in_srgb,var(--outline)_10%,transparent)] bg-[var(--surface-container-low)] p-2 md:absolute md:z-20 md:max-w-3xl md:shadow-lg">
+            <Select
+              value={domain}
+              onChange={(event) => setDomain(event.target.value)}
+              wrapperClassName="w-full md:w-40"
+              className="h-8 text-xs"
+            >
+              <option value="all">All domains</option>
+              {domains.map((item) => (
+                <option key={item} value={item}>
+                  {item}
+                </option>
+              ))}
+            </Select>
+            <Select
+              value={area}
+              onChange={(event) => setArea(event.target.value)}
+              wrapperClassName="w-full md:w-40"
+              className="h-8 text-xs"
+            >
+              <option value="all">All areas</option>
+              {areas.map((item) => (
+                <option key={item} value={item}>
+                  {item}
+                </option>
+              ))}
+            </Select>
+            <Select
+              value={tag}
+              onChange={(event) => setTag(event.target.value)}
+              wrapperClassName="w-full md:w-40"
+              className="h-8 text-xs"
+            >
+              <option value="all">All tags</option>
+              {tags.map((item) => (
+                <option key={item} value={item}>
+                  {item}
+                </option>
+              ))}
+            </Select>
+            <Select
+              value={person}
+              onChange={(event) => setPerson(event.target.value)}
+              wrapperClassName="w-full md:w-40"
+              className="h-8 text-xs"
+            >
+              <option value="all">All people</option>
+              {people.map((item) => (
+                <option key={item} value={item}>
+                  {item}
+                </option>
+              ))}
+            </Select>
+            <Select
+              value={course}
+              onChange={(event) => setCourse(event.target.value)}
+              wrapperClassName="w-full md:w-40"
+              className="h-8 text-xs"
+            >
+              <option value="all">All courses</option>
+              {courses.map((item) => (
+                <option key={item} value={item}>
+                  {item}
+                </option>
+              ))}
+            </Select>
+          </div>
+        </details>
         <Select
           value={priority}
           onChange={(event) => setPriority(event.target.value)}
@@ -349,7 +611,30 @@ export default function KanbanBoard() {
         </Select>
       </FilterBar>
 
-      <div className="flex gap-2 overflow-x-auto pb-1 md:hidden">
+      {activeChips.length > 0 && (
+        <div
+          className="flex shrink-0 flex-wrap items-center gap-1.5"
+          aria-label="Active filters"
+        >
+          {activeChips.map(([label, value, clear]) => (
+            <button
+              key={label}
+              type="button"
+              onClick={clear}
+              className="inline-flex h-7 items-center gap-1 rounded-full border border-[color:color-mix(in_srgb,var(--outline)_12%,transparent)] bg-[var(--surface-container-low)] px-2.5 text-[0.7rem] text-[var(--text-secondary)] hover:bg-[var(--surface-container-high)]"
+              aria-label={`Clear ${label} filter: ${value}`}
+            >
+              <span className="font-semibold">{label}:</span> {value}
+              <X size={12} />
+            </button>
+          ))}
+        </div>
+      )}
+
+      <div
+        data-scroll-region="kanban-statuses"
+        className="flex shrink-0 gap-2 overflow-x-auto pb-1 md:hidden"
+      >
         {STATUS_OPTIONS.map((option) => (
           <button
             key={option.value}
@@ -367,7 +652,10 @@ export default function KanbanBoard() {
         ))}
       </div>
 
-      <div className="board-scroll hidden flex-1 gap-6 overflow-x-auto pb-4 md:flex">
+      <div
+        data-scroll-region="kanban-board"
+        className="board-scroll hidden min-h-0 flex-1 gap-4 overflow-x-auto pb-4 md:flex"
+      >
         {STATUSES.map((status) => (
           <KanbanColumn
             key={status}
@@ -378,6 +666,11 @@ export default function KanbanBoard() {
             onDragOver={handleDragOver}
             onCardOpen={handleCardOpen}
             headerRight={status === 'done' ? renderArchiveDoneButton() : null}
+            emptyMessage={
+              sorted.length === 0
+                ? 'No tasks match these filters'
+                : 'Drop a task here'
+            }
             cardProps={{
               onMove: handleMoveTask,
               statusOptions: STATUS_OPTIONS,
@@ -397,6 +690,11 @@ export default function KanbanBoard() {
           singleColumn
           headerRight={
             activeMobileStatus === 'done' ? renderArchiveDoneButton() : null
+          }
+          emptyMessage={
+            sorted.length === 0
+              ? 'No tasks match these filters'
+              : 'Drop a task here'
           }
           cardProps={{ onMove: handleMoveTask, statusOptions: STATUS_OPTIONS }}
         />

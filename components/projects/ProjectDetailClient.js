@@ -2,13 +2,20 @@
 
 import { useState, useRef, useEffect } from 'react';
 import Link from 'next/link';
+import dynamic from 'next/dynamic';
 import { ArrowLeft, Send, Loader2 } from 'lucide-react';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { fetchJson } from '@/lib/fetcher';
 import { cn } from '@/lib/utils';
+
+const MilkdownEditor = dynamic(
+  () => import('@/components/vault/MilkdownEditor'),
+  {
+    ssr: false,
+    loading: () => <div className="h-24" />,
+  },
+);
 
 const STATUS_VARIANT = {
   Active: 'status-active',
@@ -20,7 +27,11 @@ function formatDate(value) {
   if (!value) return '—';
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return '—';
-  return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+  return date.toLocaleDateString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
 }
 
 export default function ProjectDetailClient({ project, initialContent }) {
@@ -63,7 +74,11 @@ export default function ProjectDetailClient({ project, initialContent }) {
       setError(err.message || 'Failed to update note');
       setMessages((prev) => [
         ...prev,
-        { role: 'assistant', text: `Error: ${err.message || 'Failed to update note'}`, error: true },
+        {
+          role: 'assistant',
+          text: `Error: ${err.message || 'Failed to update note'}`,
+          error: true,
+        },
       ]);
     } finally {
       setSending(false);
@@ -96,7 +111,9 @@ export default function ProjectDetailClient({ project, initialContent }) {
             {project.status}
           </Badge>
           {project.area && (
-            <span className="text-sm text-[var(--text-secondary)]">{project.area}</span>
+            <span className="text-sm text-[var(--text-secondary)]">
+              {project.area}
+            </span>
           )}
           <span className="text-sm text-[var(--text-muted)]">
             Target: {formatDate(project.targetDate)}
@@ -160,9 +177,7 @@ export default function ProjectDetailClient({ project, initialContent }) {
       </div>
 
       <div className="flex-1 overflow-auto rounded-xl border border-[color:color-mix(in_srgb,var(--outline)_10%,transparent)] bg-[var(--surface-container-lowest)] p-5">
-        <div className="markdown-prose">
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
-        </div>
+        <MilkdownEditor content={content} readOnly compact />
       </div>
     </div>
   );

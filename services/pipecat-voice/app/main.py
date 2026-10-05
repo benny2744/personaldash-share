@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import logging
 import time
@@ -9,6 +10,7 @@ from typing import Any
 
 from fastapi import FastAPI, Header, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse, Response
+from starlette.websockets import WebSocketState
 
 from .config import get_settings
 from .leases import LeaseError, verify_lease
@@ -124,8 +126,29 @@ async def http_speak(
     )
 
 
+HEARTBEAT_INTERVAL_SEC = 15
+
+
 async def _send_json(ws: WebSocket, payload: dict[str, Any]) -> None:
-    await ws.send_json(payload)
+    if ws.application_state != WebSocketState.CONNECTED:
+        return
+    try:
+        await ws.send_json(payload)
+    except (RuntimeError, WebSocketDisconnect):
+        # Browser socket is gone (e.g. proxy killed it). The receive loop in
+        # the handler notices the disconnect and tears the session down.
+        pass
+
+
+async def _heartbeat_loop(ws: WebSocket) -> None:
+    # Keeps server→browser traffic flowing through the Cloudflare tunnel while
+    # the user speaks (transcript partials can be seconds apart).
+    try:
+        while True:
+            await asyncio.sleep(HEARTBEAT_INTERVAL_SEC)
+            await _send_json(ws, {"type": "heartbeat", "ts": int(time.time())})
+    except asyncio.CancelledError:
+        raise
 
 
 async def _voice_ws_handler(
@@ -155,6 +178,7 @@ async def _voice_ws_handler(
     audio_bytes = 0
     text_chars = 0
     closed = False
+    heartbeat: asyncio.Task | None = None
 
     async def on_asr_transcript(text: str, is_final: bool) -> None:
         await _send_json(
@@ -228,6 +252,8 @@ async def _voice_ws_handler(
                     "expiresAt": lease.exp,
                 },
             )
+
+        heartbeat = asyncio.create_task(_heartbeat_loop(websocket))
 
         while True:
             if time.monotonic() - started > settings.max_session_seconds:
@@ -313,6 +339,12 @@ async def _voice_ws_handler(
             pass
     finally:
         closed = True
+        if heartbeat is not None:
+            heartbeat.cancel()
+            try:
+                await heartbeat
+            except asyncio.CancelledError:
+                pass
         if asr:
             await asr.close()
         if tts:

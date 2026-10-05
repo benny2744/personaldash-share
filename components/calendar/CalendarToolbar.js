@@ -114,17 +114,17 @@ export default function CalendarToolbar({
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex min-w-0 flex-1 items-center gap-2">
-          <Button variant="secondary" onClick={onPrev} aria-label="Previous">
+        <div className="flex w-full min-w-0 items-center gap-2 sm:w-auto sm:flex-1">
+          <Button variant="secondary" size="icon" className="shrink-0" onClick={onPrev} aria-label="Previous">
             <ChevronLeft size={16} />
           </Button>
-          <h2 className="min-w-0 truncate text-center text-xl font-semibold sm:min-w-[10rem] lg:min-w-[14rem]">
+          <h2 className="min-w-0 flex-1 text-center text-base font-semibold leading-snug sm:flex-none sm:text-xl sm:min-w-[10rem] lg:min-w-[14rem]">
             {title}
           </h2>
-          <Button variant="secondary" onClick={onNext} aria-label="Next">
+          <Button variant="secondary" size="icon" className="shrink-0" onClick={onNext} aria-label="Next">
             <ChevronRight size={16} />
           </Button>
-          <Button variant="ghost" onClick={onToday} className="text-sm">
+          <Button variant="ghost" onClick={onToday} className="shrink-0 px-2 text-sm">
             Today
           </Button>
         </div>
