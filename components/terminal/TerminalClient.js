@@ -37,9 +37,16 @@ function base64ToBytes(text) {
   return bytes;
 }
 
-function wsUrlFromPath(path) {
+function wsUrlFromPath(path, cols, rows) {
   const url = new URL(path, window.location.origin);
   url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
+  // The gateway sizes the PTY from this query. A resize frame sent from
+  // onopen can arrive before the server is listening, so the URL is the
+  // size the shell actually opens at.
+  if (Number.isInteger(cols) && cols >= 2 && Number.isInteger(rows) && rows >= 2) {
+    url.searchParams.set('cols', String(cols));
+    url.searchParams.set('rows', String(rows));
+  }
   return url.toString();
 }
 
@@ -106,10 +113,26 @@ export default function TerminalClient() {
       }
       wsPath = (await response.json()).wsPath;
     }
+    const term = termRef.current;
+    const cols = term?.cols;
+    const rows = term?.rows;
     return new Promise((resolve, reject) => {
-      const socket = new WebSocket(wsUrlFromPath(wsPath));
+      const socket = new WebSocket(wsUrlFromPath(wsPath, cols, rows));
       socketRef.current = socket;
-      socket.onopen = () => resolve(socket);
+      socket.onopen = () => {
+        const current = termRef.current;
+        if (
+          current &&
+          socket.readyState === WebSocket.OPEN &&
+          current.cols >= 2 &&
+          current.rows >= 2
+        ) {
+          socket.send(
+            JSON.stringify({ type: 'resize', cols: current.cols, rows: current.rows }),
+          );
+        }
+        resolve(socket);
+      };
       socket.onerror = () => reject(new Error('WebSocket connection failed'));
       socket.onmessage = (event) => {
         let frame;
@@ -187,11 +210,16 @@ export default function TerminalClient() {
     term.open(containerRef.current);
     termRef.current = term;
     fitRef.current = fit;
+    // Measure after the font is ready. Fitting against the fallback font
+    // reports the wrong cell size, so the PTY and the screen disagree.
+    try {
+      await document.fonts.ready;
+    } catch {}
     try {
       fit.fit();
     } catch {}
 
-    const { cols, rows } = fit.proposeDimensions();
+    const { cols, rows } = term;
 
     let created;
     try {
@@ -232,13 +260,12 @@ export default function TerminalClient() {
 
     const sendResize = () => {
       const socket = socketRef.current;
-      if (!fitRef.current || socket?.readyState !== WebSocket.OPEN) return;
-      try {
-        const dims = fitRef.current.proposeDimensions();
-        if (dims.cols && dims.rows) {
-          socket.send(JSON.stringify({ type: 'resize', cols: dims.cols, rows: dims.rows }));
-        }
-      } catch {}
+      const current = termRef.current;
+      if (!current || socket?.readyState !== WebSocket.OPEN) return;
+      const { cols: nextCols, rows: nextRows } = current;
+      if (nextCols >= 2 && nextRows >= 2) {
+        socket.send(JSON.stringify({ type: 'resize', cols: nextCols, rows: nextRows }));
+      }
     };
     term.onResize(sendResize);
     observerRef.current = new ResizeObserver(() => {

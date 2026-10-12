@@ -15,10 +15,19 @@ export class FakeSocket extends EventEmitter {
     this.readyState = OPEN;
     this.bufferedAmount = 0;
     this.sent = [];
+    this.holdCallbacks = false;
+    this.pendingCallbacks = [];
   }
-  send(raw) {
+  send(raw, cb) {
     if (this.readyState !== OPEN) throw new Error('not open');
     this.sent.push(JSON.parse(raw));
+    if (typeof cb !== 'function') return;
+    if (this.holdCallbacks) this.pendingCallbacks.push(cb);
+    else cb();
+  }
+  releaseCallbacks() {
+    const pending = this.pendingCallbacks.splice(0);
+    for (const cb of pending) cb();
   }
   close() {
     if (this.readyState === CLOSED) return;
@@ -46,10 +55,17 @@ export class FakeChannel extends EventEmitter {
   constructor() {
     super();
     this.written = [];
+    this.paused = false;
   }
   write(data) {
     this.written.push(data);
     return true;
+  }
+  pause() {
+    this.paused = true;
+  }
+  resume() {
+    this.paused = false;
   }
   setWindow() {}
   end() {
@@ -95,9 +111,9 @@ export function fakeSshFactory(opts = {}) {
         end() {
           this.ended = true;
         },
-        resize() {
+        resize(cols, rows) {
           this.resized = this.resized || [];
-          this.resized.push(arguments);
+          this.resized.push([cols, rows]);
         },
       };
       return current;

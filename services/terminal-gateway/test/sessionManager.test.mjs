@@ -190,17 +190,22 @@ test('detach starts grace; reattach reuses the SSH channel', async () => {
   ws1.close();
   await new Promise((resolve) => setImmediate(resolve));
   assert.equal(state.sessions.get('sess-1').status, 'grace');
+  assert.equal(ssh.current.channel.paused, true, 'channel paused for the grace gap');
 
   const ws2 = new FakeSocket();
   const result = await manager.attach({
     sessionId: 'sess-1',
     lease: makeLease('sess-1', 'alice@example.com'),
     ws: ws2,
+    cols: 120,
+    rows: 40,
   });
   assert.equal(result.ok, true);
   assert.equal(result.reattached, true);
   assert.equal(ssh.calls.length, 1, 'no second SSH dial');
   assert.equal(ssh.current.channel, channelBefore, 'same channel reused');
+  assert.equal(ssh.current.channel.paused, false, 'channel resumed on reattach');
+  assert.deepEqual(ssh.current.resized, [[120, 40]]);
 
   // New socket is bridged.
   ws2.message({ type: 'input', data: Buffer.from('id\n').toString('base64') });
@@ -322,6 +327,47 @@ test('idle timeout closes an otherwise active session', async () => {
   await new Promise((resolve) => setImmediate(resolve));
   assert.equal(ssh.current.ended, true);
   assert.equal(state.sessions.get('sess-1').status, 'closed');
+});
+
+test('output above the buffer mark pauses the channel until it drains', async () => {
+  const state = { sessions: new Map() };
+  seedSession(state);
+  const pool = fakePool(state);
+  const ssh = fakeSshFactory();
+  const manager = createSessionManager({
+    pool,
+    sshFactory: ssh,
+    config: testConfig({ maxBufferedOutputBytes: 64 }),
+    getLimits: async () => SMALL_LIMITS,
+  });
+  const ws = new FakeSocket();
+  ws.holdCallbacks = true;
+  await manager.attach({
+    sessionId: 'sess-1',
+    lease: makeLease('sess-1', 'alice@example.com'),
+    ws,
+    cols: 80,
+    rows: 24,
+  });
+
+  ws.bufferedAmount = 128;
+  ssh.current.channel.emitData('hello\n');
+  assert.equal(ws.frames('output').length, 1, 'the crossing chunk is still delivered');
+  assert.equal(
+    Buffer.from(ws.frames('output')[0].data, 'base64').toString('utf8'),
+    'hello\n',
+  );
+  assert.equal(ssh.current.channel.paused, true);
+
+  // Still above the low-water mark: the write callback must not resume.
+  ws.bufferedAmount = 40;
+  ws.releaseCallbacks();
+  assert.equal(ssh.current.channel.paused, true);
+
+  ws.bufferedAmount = 0;
+  ws.holdCallbacks = false;
+  ssh.current.channel.emitData('more\n');
+  assert.equal(ssh.current.channel.paused, false);
 });
 
 test('fatal client frames close the socket with protocol code', async () => {
