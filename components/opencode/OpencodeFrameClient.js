@@ -2,10 +2,8 @@
 
 import { useEffect, useState } from 'react';
 import { ArrowLeft, ExternalLink } from 'lucide-react';
-import { getOpencodeFrameUrl } from '@/lib/opencodeFrameUrl';
 
 const RETURN_TO_KEY = 'personaldash.opencode.returnTo';
-const OPENCODE_URL = getOpencodeFrameUrl(process.env.NEXT_PUBLIC_OPENCODE_URL);
 
 function safeInternalPath(value) {
   if (
@@ -18,8 +16,20 @@ function safeInternalPath(value) {
   return value;
 }
 
+// The dashboard image is shared by every VM, so the OpenCode origin cannot be
+// baked in. code-<label> is the same site with the first label prefixed.
+function opencodeOrigin() {
+  const host = window.location.hostname;
+  const dot = host.indexOf('.');
+  if (dot <= 0) return '';
+  const label = host.slice(0, dot);
+  if (!label || label.startsWith('code-')) return '';
+  return `https://code-${label}${host.slice(dot)}`;
+}
+
 export default function OpencodeFrameClient() {
   const [returnTo, setReturnTo] = useState(null);
+  const [openUrl, setOpenUrl] = useState('');
 
   useEffect(() => {
     let target = null;
@@ -41,6 +51,7 @@ export default function OpencodeFrameClient() {
       }
     }
     setReturnTo(target || '/');
+    setOpenUrl(opencodeOrigin());
   }, []);
 
   return (
@@ -55,9 +66,9 @@ export default function OpencodeFrameClient() {
           <ArrowLeft size={16} />
           <span>Back</span>
         </button>
-        {OPENCODE_URL && (
+        {openUrl && (
           <a
-            href={OPENCODE_URL}
+            href={openUrl}
             target="_blank"
             rel="noreferrer"
             className="inline-flex min-h-9 items-center gap-2 rounded-md px-2 text-sm text-[var(--text-secondary)] transition-colors hover:bg-[var(--surface-container-high)] hover:text-[var(--text-primary)]"
@@ -67,17 +78,16 @@ export default function OpencodeFrameClient() {
           </a>
         )}
       </div>
-      {OPENCODE_URL ? (
+      {openUrl ? (
         <iframe
-          src={OPENCODE_URL}
+          src={openUrl}
           title="OpenCode"
           className="block min-h-0 w-full flex-1 border-0 bg-white"
           allow="clipboard-read; clipboard-write"
         />
       ) : (
         <div className="flex flex-1 items-center justify-center p-6 text-center text-sm text-[var(--text-secondary)]">
-          Configure <code className="mx-1">NEXT_PUBLIC_OPENCODE_URL</code> and
-          rebuild the dashboard to enable the OpenCode frame.
+          Open this dashboard from its public hostname to load OpenCode.
         </div>
       )}
     </div>
