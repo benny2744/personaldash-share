@@ -122,6 +122,9 @@ mount the key directory into the app.
 1. Set `TERMINAL_ENABLED=true`, `TERMINAL_LEASE_SECRET` (generate with
    `openssl rand -hex 32`), `TERMINAL_LOCAL_IDENTITY`, and
    `TERMINAL_ADMIN_IDENTITIES` in `.env`. The admin list is comma-separated.
+   Start the optional gateway with
+   `COMPOSE_PROFILES=terminal docker compose up -d --build`; it is not started
+   by the default profile.
 2. Route `/api/terminal/ws` through your reverse proxy to
    `http://127.0.0.1:3016`, preserving WebSocket upgrades. The Compose port is
    loopback-only. Expose the dashboard only behind authenticated TLS access;

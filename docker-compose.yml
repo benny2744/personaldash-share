@@ -49,7 +49,7 @@ services:
       - ${DWS_HOST_PATH:?set DWS_HOST_PATH in .env}:/usr/local/bin/dws:ro
       - ${DWS_CONFIG_HOST_PATH:?set DWS_CONFIG_HOST_PATH in .env}:/home/nextjs/.dws
       - ${DWS_DATA_HOST_PATH:?set DWS_DATA_HOST_PATH in .env}:/home/nextjs/.local/share/dws-cli
-      - ${OPENCODE_SERVER_AUTH_FILE_HOST:-./opencode-service.json}:/run/opencode-service.json:ro
+      - ${OPENCODE_SERVER_AUTH_FILE_HOST:-/dev/null}:/run/opencode-service.json:ro
       # Runtime cache for downloaded DingTalk media.
       - ./data/dingtalk-media:/data/dingtalk-media
     extra_hosts:
@@ -89,6 +89,7 @@ services:
   terminal-gateway:
     build: ./services/terminal-gateway
     container_name: workdash-terminal-gateway
+    profiles: ['terminal']
     ports:
       - '127.0.0.1:3016:3016'
     env_file:
@@ -98,7 +99,7 @@ services:
       - TZ=${TZ:-Asia/Shanghai}
       - PORT=3016
       - DATABASE_URL=${DATABASE_URL:?set DATABASE_URL in .env}
-      - TERMINAL_LEASE_SECRET=${TERMINAL_LEASE_SECRET:?set TERMINAL_LEASE_SECRET in .env}
+      - TERMINAL_LEASE_SECRET=${TERMINAL_LEASE_SECRET:-}
       - TERMINAL_KEY_DIR=/run/terminal-keys
     volumes:
       - ${TERMINAL_KEYS_HOST_DIR:-./terminal-keys}:/run/terminal-keys:ro
