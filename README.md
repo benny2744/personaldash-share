@@ -20,6 +20,12 @@ A self-hosted workspace dashboard over a folder of Markdown notes:
 - **Hermes Admin** — in-app iframe at `/hermes-frame`, keeping dashboard
   navigation available. Proxy `/hermes/` to your own Hermes dashboard service
   on the same origin; the iframe uses `/hermes/`.
+- **OpenCode** — optional cross-origin iframe at `/opencode-frame`; set
+  `NEXT_PUBLIC_OPENCODE_URL` at build time and allow the WorkDash origin in the
+  OpenCode server's `frame-ancestors` policy.
+- **Terminal** — optional browser terminal backed by a separate SSH gateway;
+  private keys stay in the gateway container and host keys must be verified
+  and pinned before use.
 
 Files replaces the standalone Vault page. The repository contains application
 code and placeholder configuration; supply your own vault, identities, and keys.
@@ -43,10 +49,10 @@ docker compose up -d --build
 The app serves on `http://127.0.0.1:3003`. Migrations run automatically at
 container start (`prisma migrate deploy` via `docker-entrypoint.sh`).
 
-Compose starts four services — `app`, `pipecat-voice` (chat voice),
-`libreoffice-converter` (document text extraction), and a convenience
-`db` (Postgres 16). Point `DATABASE_URL` at your own Postgres instead if
-you prefer.
+Compose starts `app`, `pipecat-voice` (chat voice), `libreoffice-converter`
+(document text extraction), a `terminal-gateway` (when configured), and a
+convenience `db` (Postgres 16). Point `DATABASE_URL` at your own Postgres
+instead if you prefer.
 
 ## Host-side prerequisites
 
@@ -97,6 +103,38 @@ deterministic in-code passes; set `MEETING_FORMATTER=opencode` to use
 [`lib/meetingPipeline/opencode/agents/`](lib/meetingPipeline/opencode/) onto
 the opencode host and see its README.
 
+### OpenCode frame (optional)
+
+Set `NEXT_PUBLIC_OPENCODE_URL` in `.env` to your OpenCode web UI origin, then
+rebuild with `docker compose up -d --build app`. This URL is embedded in the
+browser bundle. The remote OpenCode gateway must permit your WorkDash origin in
+its `frame-ancestors` policy and support the required iframe session cookie;
+otherwise open it in a separate tab.
+
+### Web terminal (optional)
+
+The browser connects to the app, which issues short-lived signed leases. The
+`terminal-gateway` sidecar verifies each lease and re-checks host authorization
+before opening SSH. It mounts `${TERMINAL_KEYS_HOST_DIR:-./terminal-keys}`
+read-only; put private keys there using names like `default_ed25519`, and do not
+mount the key directory into the app.
+
+1. Set `TERMINAL_ENABLED=true`, `TERMINAL_LEASE_SECRET` (generate with
+   `openssl rand -hex 32`), `TERMINAL_LOCAL_IDENTITY`, and
+   `TERMINAL_ADMIN_IDENTITIES` in `.env`. The admin list is comma-separated.
+2. Route `/api/terminal/ws` through your reverse proxy to
+   `http://127.0.0.1:3016`, preserving WebSocket upgrades. The Compose port is
+   loopback-only. Expose the dashboard only behind authenticated TLS access;
+   WorkDash itself has no built-in authentication.
+3. In **Settings → Terminal hosts**, create a host and click **Learn key**.
+   Verify the returned SHA256 fingerprint independently on the target host,
+   then pin it. Add the intended users to the host allow-list before connecting.
+
+Never disable host-key pin verification or expose the gateway directly to the
+public internet. If the reverse proxy supplies a user identity header, configure
+`TERMINAL_IDENTITY_HEADER` accordingly; include the authenticated identity in
+the admin and host allow-lists.
+
 ### Chat voice (optional)
 
 Voice input/output uses the `pipecat-voice` sidecar with Qwen realtime
@@ -123,16 +161,16 @@ Node 22+, pnpm 10. Set the env vars from `.env.example` first (at minimum
 
 ## Layout
 
-| Path | Purpose |
-| ---- | ------- |
-| `app/` | Next.js App Router pages + API route handlers |
-| `components/` | React UI (shell, kanban, meetings, hermes, dingtalk, calendar) |
-| `lib/` | indexer, sync worker (frontmatter write-back), caldav, hermes client, meeting pipeline, cache layer |
-| `services/dingtalk-bridge/` | message collector/backfill CLI scripts (raw SQL) |
-| `services/pipecat-voice/` | Qwen realtime ASR/TTS sidecar |
-| `services/libreoffice-converter/` | document text extraction sidecar |
-| `prisma/` | schema + migrations (including the hand-written DingTalk chat tables) |
-| `docs/architecture.md` | indexer/sync/pipeline design notes |
+| Path                              | Purpose                                                                                             |
+| --------------------------------- | --------------------------------------------------------------------------------------------------- |
+| `app/`                            | Next.js App Router pages + API route handlers                                                       |
+| `components/`                     | React UI (shell, kanban, meetings, hermes, dingtalk, calendar)                                      |
+| `lib/`                            | indexer, sync worker (frontmatter write-back), caldav, hermes client, meeting pipeline, cache layer |
+| `services/dingtalk-bridge/`       | message collector/backfill CLI scripts (raw SQL)                                                    |
+| `services/pipecat-voice/`         | Qwen realtime ASR/TTS sidecar                                                                       |
+| `services/libreoffice-converter/` | document text extraction sidecar                                                                    |
+| `prisma/`                         | schema + migrations (including the hand-written DingTalk chat tables)                               |
+| `docs/architecture.md`            | indexer/sync/pipeline design notes                                                                  |
 
 ## Note
 

@@ -748,3 +748,50 @@ model AppSetting {
 
   @@map("app_settings")
 }
+
+// ─── TerminalHost: SSH targets reachable through the terminal-gateway ────────
+// credentialRef is an ALIAS into the sidecar's read-only key directory
+// (<ref>_ed25519) — never key material. hostKeySha256 pins the expected host
+// key fingerprint ("SHA256:<base64>", ssh-keygen -lf format); sessions fail
+// closed when missing or mismatched. allowedIdentities empty = admins only.
+model TerminalHost {
+  id               String   @id @default(cuid())
+  slug             String   @unique
+  displayName      String   @map("display_name")
+  sshHost          String   @map("ssh_host")
+  sshPort          Int      @default(22) @map("ssh_port")
+  sshUser          String   @map("ssh_user")
+  credentialRef    String   @default("default") @map("credential_ref")
+  hostKeySha256    String?  @map("host_key_sha256")
+  allowedIdentities String[] @map("allowed_identities")
+  enabled          Boolean  @default(true)
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  sessions TerminalSession[]
+
+  @@map("terminal_hosts")
+}
+
+// ─── TerminalSession: audit metadata for terminal usage (no content) ─────────
+model TerminalSession {
+  id             String    @id
+  identity       String
+  hostId         String    @map("host_id")
+  status         String    // pending | active | grace | closed | failed
+  clientMeta     Json?     @map("client_meta")
+  bytesIn        BigInt    @default(0) @map("bytes_in")
+  bytesOut       BigInt    @default(0) @map("bytes_out")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  connectedAt    DateTime? @map("connected_at")
+  lastActivityAt DateTime? @map("last_activity_at")
+  closedAt       DateTime? @map("closed_at")
+  closeReason    String?   @map("close_reason")
+
+  host TerminalHost @relation(fields: [hostId], references: [id], onDelete: Restrict)
+
+  @@index([identity, status])
+  @@index([hostId, status])
+  @@index([createdAt])
+  @@map("terminal_sessions")
+}

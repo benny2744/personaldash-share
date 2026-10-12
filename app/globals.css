@@ -230,7 +230,9 @@ nav[aria-label="Main navigation"] {
 
 /* Chat fills the shell beside the site sidebar and below the header. */
 .app-shell[data-route='chat'] .app-content,
-.app-shell[data-route='hermes-frame'] .app-content {
+.app-shell[data-route='hermes-frame'] .app-content,
+.app-shell[data-route='opencode-frame'] .app-content,
+.app-shell[data-route='terminal'] .app-content {
   max-width: none;
   margin: 0;
   padding: 0;
@@ -239,7 +241,9 @@ nav[aria-label="Main navigation"] {
 }
 
 .app-shell[data-route='chat'] .app-main,
-.app-shell[data-route='hermes-frame'] .app-main {
+.app-shell[data-route='hermes-frame'] .app-main,
+.app-shell[data-route='opencode-frame'] .app-main,
+.app-shell[data-route='terminal'] .app-main {
   min-height: 100dvh;
 }
 
@@ -447,7 +451,9 @@ html {
   }
 
   .app-shell[data-route='chat'] .app-content,
-  .app-shell[data-route='hermes-frame'] .app-content {
+  .app-shell[data-route='hermes-frame'] .app-content,
+  .app-shell[data-route='opencode-frame'] .app-content,
+  .app-shell[data-route='terminal'] .app-content {
     padding: 0;
     height: calc(100dvh - var(--header-height));
   }
@@ -460,7 +466,9 @@ html {
   }
 
   .app-shell[data-route='chat'] .app-content,
-  .app-shell[data-route='hermes-frame'] .app-content {
+  .app-shell[data-route='hermes-frame'] .app-content,
+  .app-shell[data-route='opencode-frame'] .app-content,
+  .app-shell[data-route='terminal'] .app-content {
     padding: 0;
   }
 

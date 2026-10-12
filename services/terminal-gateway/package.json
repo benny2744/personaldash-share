@@ -1,0 +1,17 @@
+{
+  "name": "terminal-gateway",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "WorkDash web terminal sidecar: lease-verified WebSocket bridge to server-side SSH (ssh2).",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test test/"
+  },
+  "dependencies": {
+    "pg": "^8.21.0",
+    "ssh2": "^1.16.0",
+    "ws": "^8.18.0"
+  }
+}

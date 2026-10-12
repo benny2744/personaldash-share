@@ -20,6 +20,7 @@ import {
 } from '@/lib/cache/config';
 import LlmTiersCard from '@/components/settings/LlmTiersCard';
 import GbrainStatusCard from '@/components/settings/GbrainStatusCard';
+import TerminalHostsCard from '@/components/settings/TerminalHostsCard';
 import SettingsGroupsCard from '@/components/settings/SettingsGroupsCard';
 import SetupAssistant from '@/components/settings/SetupAssistant';
 
@@ -106,6 +107,8 @@ export default function SettingsClient() {
     <div className="max-w-2xl space-y-6">
       <SetupAssistant />
       <SettingsGroupsCard />
+
+      <TerminalHostsCard />
 
       <GbrainStatusCard />
 

@@ -6,6 +6,7 @@ import { useEffect } from 'react';
 import {
   Bot,
   Calendar,
+  Code2,
   Columns3,
   FolderKanban,
   HardDrive,
@@ -14,15 +15,24 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Settings,
+  SquareTerminal,
   X,
   Zap,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { getOpencodeFrameUrl } from '@/lib/opencodeFrameUrl';
 import { cn } from '@/lib/utils';
 import { useMobileNav } from './MobileNavContext';
 
 const NAV_ITEMS = [
   { href: '/chat', label: 'Chat', icon: MessagesSquare },
+  {
+    href: '/opencode-frame',
+    label: 'OpenCode',
+    icon: Code2,
+    requiresOpencode: true,
+  },
+  { href: '/terminal', label: 'Terminal', icon: SquareTerminal },
   { href: '/projects', label: 'Projects', icon: FolderKanban },
   { href: '/calendar', label: 'Calendar', icon: Calendar },
   { href: '/kanban', label: 'Kanban', icon: Columns3 },
@@ -120,7 +130,13 @@ export default function Sidebar() {
           className="flex-1 flex flex-col gap-1 text-sm font-medium overflow-y-auto"
           data-scroll-region
         >
-          {NAV_ITEMS.map((item) => (
+          {NAV_ITEMS.filter(
+            (item) =>
+              !item.requiresOpencode ||
+              Boolean(
+                getOpencodeFrameUrl(process.env.NEXT_PUBLIC_OPENCODE_URL),
+              ),
+          ).map((item) => (
             <li key={item.href}>
               {item.external ? (
                 <a
@@ -146,11 +162,14 @@ export default function Sidebar() {
                   href={item.href}
                   title={collapsed ? item.label : undefined}
                   onClick={
-                    item.href === '/hermes-frame'
+                    item.href === '/hermes-frame' ||
+                    item.href === '/opencode-frame'
                       ? () => {
                           try {
                             sessionStorage.setItem(
-                              'personaldash.hermes.returnTo',
+                              item.href === '/hermes-frame'
+                                ? 'personaldash.hermes.returnTo'
+                                : 'personaldash.opencode.returnTo',
                               `${pathname}${window.location.search}`,
                             );
                           } catch {
