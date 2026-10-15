@@ -8,6 +8,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
 import ProfilePicker from './ProfilePicker';
 import { orderSessionsByPin } from '@/lib/hermes/sessionOrder';
+import { epochToMs } from '@/lib/hermes/time';
 import { cn } from '@/lib/utils';
 
 function sessionTitle(session) {
@@ -20,9 +21,12 @@ function sessionTitle(session) {
 }
 
 function formatWhen(value) {
-  if (!value) return '';
+  // Dashboard session rows carry epoch SECONDS (float); new Date(number)
+  // expects milliseconds — normalize or every date renders as Jan 1970.
+  const ms = epochToMs(value);
+  if (!ms) return '';
   try {
-    return new Date(value).toLocaleString(undefined, {
+    return new Date(ms).toLocaleString(undefined, {
       month: 'short',
       day: 'numeric',
       hour: '2-digit',

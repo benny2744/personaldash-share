@@ -23,6 +23,9 @@ export default function Transcript({
   const scrollRef = useRef(null);
   const followRef = useRef(true);
   const lastUserRowIdRef = useRef(null);
+  // History loads after a session switch jump straight to the bottom instead
+  // of smooth-scrolling through the whole transcript (the "scroll replay").
+  const initialScrollDoneRef = useRef(false);
   const controllerRef = useRef(null);
   const [playback, setPlayback] = useState({ state: 'idle', activeId: null });
   const [hasNewBelow, setHasNewBelow] = useState(false);
@@ -47,6 +50,7 @@ export default function Transcript({
     controllerRef.current?.stop();
     followRef.current = true;
     lastUserRowIdRef.current = null;
+    initialScrollDoneRef.current = false;
     setHasNewBelow(false);
   }, [sessionKey]);
 
@@ -65,6 +69,11 @@ export default function Transcript({
     setHasNewBelow(false);
   }, []);
 
+  const handleTogglePlayback = useCallback(
+    (messageId, text) => controllerRef.current?.toggle(messageId, text),
+    [],
+  );
+
   useEffect(() => {
     const lastUserRow = [...rows].reverse().find((row) => row.type === 'user');
     const isNewUserRow =
@@ -77,8 +86,14 @@ export default function Transcript({
         (row.type === 'work' && row.running),
     );
 
+    // The first non-empty history render after a session switch (the cached
+    // snapshot, or the fetched history on a cold open) snaps to the bottom;
+    // smooth scrolling there would visually replay the whole conversation.
+    const isInitialHistory = !initialScrollDoneRef.current && rows.length > 0;
+    if (isInitialHistory) initialScrollDoneRef.current = true;
+
     if (isNewUserRow || followRef.current) {
-      scrollToBottom(streaming ? 'auto' : 'smooth');
+      scrollToBottom(isInitialHistory || streaming ? 'auto' : 'smooth');
     } else {
       setHasNewBelow(true);
     }
@@ -120,7 +135,10 @@ export default function Transcript({
             {rows.map((row) => {
               if (row.type === 'work') {
                 return (
-                  <div key={row.id} className="flex justify-start">
+                  <div
+                    key={row.id}
+                    className="flex justify-start [content-visibility:auto] [contain-intrinsic-size:auto_80px]"
+                  >
                     <WorkTrace
                       summary={row.summary}
                       reasoning={row.reasoning}
@@ -137,15 +155,17 @@ export default function Transcript({
                 row.type === 'other'
               ) {
                 return (
-                  <MessageBubble
+                  <div
                     key={row.id}
-                    message={row.message}
-                    playbackActiveId={playback.activeId}
-                    playbackState={playback.state}
-                    onTogglePlayback={(messageId, text) =>
-                      controllerRef.current?.toggle(messageId, text)
-                    }
-                  />
+                    className="[content-visibility:auto] [contain-intrinsic-size:auto_120px]"
+                  >
+                    <MessageBubble
+                      message={row.message}
+                      playbackActiveId={playback.activeId}
+                      playbackState={playback.state}
+                      onTogglePlayback={handleTogglePlayback}
+                    />
+                  </div>
                 );
               }
               return null;

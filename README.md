@@ -20,9 +20,10 @@ A self-hosted workspace dashboard over a folder of Markdown notes:
 - **Hermes Admin** — in-app iframe at `/hermes-frame`, keeping dashboard
   navigation available. Proxy `/hermes/` to your own Hermes dashboard service
   on the same origin; the iframe uses `/hermes/`.
-- **OpenCode** — optional cross-origin iframe at `/opencode-frame`; set
-  `NEXT_PUBLIC_OPENCODE_URL` at build time and allow the WorkDash origin in the
-  OpenCode server's `frame-ancestors` policy.
+- **OpenCode** — optional cross-origin iframe at `/opencode-frame`; its origin
+  is derived from the public dashboard hostname (`dash.example.com` →
+  `https://code-dash.example.com`). Allow the WorkDash origin in the OpenCode
+  server's `frame-ancestors` policy.
 - **Terminal** — optional browser terminal backed by a separate SSH gateway;
   private keys stay in the gateway container and host keys must be verified
   and pinned before use.
@@ -105,11 +106,20 @@ the opencode host and see its README.
 
 ### OpenCode frame (optional)
 
-Set `NEXT_PUBLIC_OPENCODE_URL` in `.env` to your OpenCode web UI origin, then
-rebuild with `docker compose up -d --build app`. This URL is embedded in the
-browser bundle. The remote OpenCode gateway must permit your WorkDash origin in
-its `frame-ancestors` policy and support the required iframe session cookie;
-otherwise open it in a separate tab.
+The frame derives its URL from the public WorkDash hostname: for example,
+`dash.example.com` loads `https://code-dash.example.com`. This lets the same
+image work across hosts without a build-time URL. Open WorkDash through a public
+hostname with a dotted domain; a bare IP address, `localhost`, or a hostname
+whose first label already starts with `code-` cannot produce a frame URL. The
+OpenCode gateway must permit the WorkDash origin in its `frame-ancestors` policy
+and support its iframe session cookie. If framing is blocked, use the direct
+OpenCode hostname in a separate tab.
+
+The meeting pipeline's `OPENCODE_SERVER_*` variables configure server-side
+formatter agents and are independent of the browser iframe URL.
+
+The meeting pipeline's `OPENCODE_SERVER_*` variables configure server-side
+formatter agents and are independent of the browser iframe URL.
 
 ### Web terminal (optional)
 
@@ -132,6 +142,12 @@ mount the key directory into the app.
 3. In **Settings → Terminal hosts**, create a host and click **Learn key**.
    Verify the returned SHA256 fingerprint independently on the target host,
    then pin it. Add the intended users to the host allow-list before connecting.
+
+The SSH PTY opens at the fitted xterm viewport dimensions and follows later
+resizes. If the browser output buffer backs up, the gateway pauses the SSH
+channel and resumes it after the WebSocket drains; SSH output is not intentionally
+dropped. During the reconnect grace window, SSH output remains paused until the
+browser reattaches or the session expires.
 
 Never disable host-key pin verification or expose the gateway directly to the
 public internet. If the reverse proxy supplies a user identity header, configure

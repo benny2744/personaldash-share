@@ -1,0 +1,20 @@
+# User unit for the leave-notice forwarder. Install with:
+#   cp leave-forwarder.service.example ~/.config/systemd/user/leave-forwarder.service
+#   systemctl --user daemon-reload && systemctl --user enable --now leave-forwarder
+# Config must exist first (see README-leave.md). Restart=no is a contract,
+# not an oversight — see "Delivery safety" in README-leave.md.
+
+[Unit]
+Description=DingTalk leave-notice forwarder (dws OA events -> self DM)
+After=network-online.target
+
+[Service]
+ExecStart=/usr/bin/python3 -B /home/user/personal_dash/services/dingtalk-bridge/leave_forwarder.py --config /home/user/.config/leave-forwarder/config.json
+Environment=PATH=/home/user/.local/bin:/usr/local/bin:/usr/bin:/bin
+Environment=PYTHONDONTWRITEBYTECODE=1
+WorkingDirectory=/home/user/personal_dash/services/dingtalk-bridge
+Restart=no
+TimeoutStopSec=30s
+
+[Install]
+WantedBy=default.target

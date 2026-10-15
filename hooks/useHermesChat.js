@@ -85,7 +85,17 @@ export function useHermesChat() {
     stateRef.current = state;
   }, [state]);
 
-  const sessionsApi = useHermesSessions({ runtime, cacheStore, profile });
+  const getActiveSessionIds = useCallback(() => {
+    const current = stateRef.current;
+    return [current.liveSessionId, current.storedSessionId];
+  }, []);
+
+  const sessionsApi = useHermesSessions({
+    runtime,
+    cacheStore,
+    profile,
+    getActiveSessionIds,
+  });
 
   const handleConnectionState = useCallback((connectionState) => {
     dispatch({ type: 'connection', payload: connectionState });

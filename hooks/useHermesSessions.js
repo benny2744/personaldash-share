@@ -1,7 +1,17 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { readSessionList, writeSessionList } from '@/lib/cache/hermesCache';
+import {
+  readSessionList,
+  readTranscript,
+  writeSessionList,
+} from '@/lib/cache/hermesCache';
+import {
+  prefetchTranscript,
+  selectPrefetchTargets,
+  transcriptNeedsPrefetch,
+  PREFETCH_DELAY_MS,
+} from '@/lib/hermes/transcriptPrefetch';
 
 /**
  * Session list/search/CRUD state for the Hermes chat workspace.
@@ -11,7 +21,12 @@ import { readSessionList, writeSessionList } from '@/lib/cache/hermesCache';
  * rename/delete (reducer updates when the current session is affected) are
  * layered on by the facade.
  */
-export function useHermesSessions({ runtime, cacheStore, profile }) {
+export function useHermesSessions({
+  runtime,
+  cacheStore,
+  profile,
+  getActiveSessionIds,
+}) {
   const [sessions, setSessions] = useState([]);
   const [sessionsLoading, setSessionsLoading] = useState(true);
   const [sessionsError, setSessionsError] = useState(null);
@@ -27,6 +42,82 @@ export function useHermesSessions({ runtime, cacheStore, profile }) {
   useEffect(() => {
     queryRef.current = query;
   }, [query]);
+
+  // Background transcript prefetch: after a fresh list lands, warm the most
+  // recent sessions into the IndexedDB transcript cache so opening them is
+  // instant. Best-effort — any failure just means a normal (slower) open.
+  const prefetchTimerRef = useRef(null);
+  const prefetchRunRef = useRef(0);
+  const activeSessionIdsRef = useRef(getActiveSessionIds);
+
+  useEffect(() => {
+    activeSessionIdsRef.current = getActiveSessionIds;
+  }, [getActiveSessionIds]);
+
+  const cancelPrefetch = useCallback(() => {
+    if (prefetchTimerRef.current) {
+      clearTimeout(prefetchTimerRef.current);
+      prefetchTimerRef.current = null;
+    }
+    prefetchRunRef.current += 1;
+  }, []);
+
+  const scheduleTranscriptPrefetch = useCallback(
+    (list) => {
+      if (prefetchTimerRef.current) {
+        clearTimeout(prefetchTimerRef.current);
+      }
+      const reqRuntime = runtime;
+      const reqProfile = profile;
+      const run = ++prefetchRunRef.current;
+      const isCurrent = () =>
+        prefetchRunRef.current === run &&
+        runtimeRef.current === reqRuntime &&
+        profileRef.current === reqProfile;
+      prefetchTimerRef.current = setTimeout(
+        async () => {
+          prefetchTimerRef.current = null;
+          if (!isCurrent()) return;
+          const targets = selectPrefetchTargets(list, {
+            excludeIds: activeSessionIdsRef.current?.() || [],
+          });
+          for (const row of targets) {
+            if (!isCurrent()) return;
+            const sessionId =
+              row?.session_id || row?.id || (typeof row === 'string' ? row : null);
+            if (!sessionId) continue;
+            try {
+              const cached = await readTranscript(
+                cacheStore(),
+                sessionId,
+                reqProfile,
+              );
+              if (!isCurrent()) return;
+              if (!transcriptNeedsPrefetch(cached, row)) continue;
+              await prefetchTranscript({
+                sessionId,
+                sessionRow: row,
+                cached,
+                fetchMessages: reqRuntime.sessions.getMessages,
+                store: cacheStore(),
+                profile: reqProfile,
+              });
+            } catch {
+              // Best-effort: leave the cache as-is for this session.
+            }
+          }
+        },
+        PREFETCH_DELAY_MS,
+      );
+    },
+    [cacheStore, profile, runtime],
+  );
+
+  // Prefetch work never survives a profile/runtime swap or unmount.
+  useEffect(() => {
+    cancelPrefetch();
+    return cancelPrefetch;
+  }, [cancelPrefetch, runtime, profile]);
 
   // A profile switch swaps the runtime instance. Drop the previous profile's
   // list immediately so its sessions never flash under the new profile, and
@@ -112,6 +203,7 @@ export function useHermesSessions({ runtime, cacheStore, profile }) {
             setSearching(false);
             setSessions(list);
             await writeSessionList(cacheStore(), list, reqProfile);
+            scheduleTranscriptPrefetch(list);
           }
         }
       } catch (error) {
@@ -120,7 +212,7 @@ export function useHermesSessions({ runtime, cacheStore, profile }) {
         if (isCurrent()) setSessionsLoading(false);
       }
     },
-    [cacheStore, profile, runtime],
+    [cacheStore, profile, runtime, scheduleTranscriptPrefetch],
   );
 
   const renameSession = useCallback(

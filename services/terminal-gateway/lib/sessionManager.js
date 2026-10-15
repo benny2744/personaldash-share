@@ -62,17 +62,49 @@ export function createSessionManager(deps) {
   /** sessionId → live entry (active or grace) */
   const live = new Map();
 
+  /**
+   * Pause the SSH channel when the browser cannot take more output, and while
+   * the socket is gone during reconnect grace. A paused ssh2 channel stops
+   * reading, so the SSH window holds the bytes instead of this process
+   * dropping them mid-sequence.
+   */
+  function pauseChannel(entry) {
+    if (entry.channelPaused) return;
+    const channel = entry.ssh?.channel;
+    if (!channel || typeof channel.pause !== 'function') return;
+    entry.channelPaused = true;
+    try {
+      channel.pause();
+    } catch {
+      entry.channelPaused = false;
+    }
+  }
+
+  function resumeChannel(entry) {
+    if (!entry.channelPaused || entry.state === 'grace') return;
+    entry.channelPaused = false;
+    const channel = entry.ssh?.channel;
+    if (!channel || typeof channel.resume !== 'function') return;
+    try {
+      channel.resume();
+    } catch {}
+  }
+
   function send(entry, frame) {
     const ws = entry?.ws;
     if (!ws || ws.readyState !== 1 /* OPEN */) return;
-    if (ws.bufferedAmount > config.maxBufferedOutputBytes) {
-      // Backpressure: drop output rather than buffer without bound.
-      entry.droppedOutput += 1;
-      return;
-    }
     try {
-      ws.send(encodeServerFrame(frame));
+      // The callback runs once this frame has been written to the socket.
+      // Resume only for this socket: a late callback from a dead one must
+      // not start the channel flowing into a grace gap.
+      ws.send(encodeServerFrame(frame), () => {
+        const current = entry.ws;
+        if (!current || current !== ws || current.readyState !== 1) return;
+        const low = Math.floor(config.maxBufferedOutputBytes / 2);
+        if (current.bufferedAmount <= low) resumeChannel(entry);
+      });
     } catch {}
+    if (ws.bufferedAmount > config.maxBufferedOutputBytes) pauseChannel(entry);
   }
 
   function status(entry, state, message) {
@@ -91,6 +123,7 @@ export function createSessionManager(deps) {
   function startGrace(entry) {
     entry.state = 'grace';
     status(entry, 'grace');
+    pauseChannel(entry);
     entry.graceTimer = watch(
       timers.setTimeout(() => {
         close(entry.sessionId, 'grace_expired');
@@ -328,6 +361,12 @@ export function createSessionManager(deps) {
       existing.ws = params.ws;
       const applied = await transitionSession(pool, sessionId, ['grace'], 'active');
       wireSocket(existing);
+      if (Number.isInteger(params.cols) && Number.isInteger(params.rows)) {
+        try {
+          existing.ssh.resize(params.cols, params.rows);
+        } catch {}
+      }
+      resumeChannel(existing);
       status(existing, 'active');
       audit.info('terminal.session.reattached', {
         sessionId,
@@ -357,6 +396,7 @@ export function createSessionManager(deps) {
       counters: { in: 0, out: 0 },
       flushed: { in: 0, out: 0 },
       droppedOutput: 0,
+      channelPaused: false,
       exitCode: null,
       idleTimer: null,
       graceTimer: null,

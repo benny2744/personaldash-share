@@ -87,6 +87,12 @@ capability. Cloudflare Access remains the real gate for remote callers.
 
 JSON text frames. `data` fields are base64 (binary-safe paste/output).
 
+The browser waits for terminal fonts, fits xterm to the available viewport, and
+submits the measured `cols`/`rows` when creating a session. Those dimensions are
+included in the WebSocket attach URL so the SSH PTY opens at the actual screen
+size (rather than its 80×24 default); later xterm resize events resize the PTY.
+Reconnect leases use the current dimensions to resize the existing PTY.
+
 | Direction | Frame |
 |---|---|
 | c→s | `{type:'input', data}` (base64, ≤64 KiB decoded) |
@@ -100,6 +106,15 @@ JSON text frames. `data` fields are base64 (binary-safe paste/output).
 Unknown client frame types are ignored (logged once). Invalid frames → socket
 closed with an `error` frame. One attached socket per session: attach while
 `active` is rejected; attach during `grace` re-attaches.
+
+### Output flow control
+
+The sidecar pauses the SSH channel when the WebSocket's buffered output exceeds
+`maxBufferedOutputBytes` (4 MiB by default), and resumes below half that limit
+after the WebSocket send callback confirms drainage. It also pauses SSH output
+through the disconnect grace period, retaining bytes in the SSH channel window
+until the browser reattaches. Output is not intentionally dropped to handle
+backpressure; the SSH channel is closed if the grace period expires.
 
 ## 7. Session lifecycle
 
@@ -151,4 +166,4 @@ rows carry the same metadata for the Settings UI / later review.
 | Runaway sessions | Per-identity cap, idle + absolute timeouts, server-enforced |
 | Cross-site writes | `configurationRequestError` on all terminal mutations |
 | Content surveillance | No capture; counters + metadata only |
-| DoS via frames | 64 KiB frame cap, resize bounds, input backpressure (sidecar drops when SSH buffer saturated) |
+| DoS via frames | 64 KiB frame cap, resize bounds, bounded WebSocket output buffer with SSH-channel pause/resume backpressure |

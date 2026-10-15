@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { memo, useEffect, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import {
@@ -56,7 +56,9 @@ const markdownComponents = {
 };
 
 
-export default function MessageBubble({
+// Memoized: message object references are stable across tail-merges and
+// reconcile re-dispatches, so unchanged bubbles skip the ReactMarkdown tree.
+function MessageBubble({
   message,
   playbackActiveId = null,
   playbackState = 'idle',
@@ -231,3 +233,5 @@ export default function MessageBubble({
     </div>
   );
 }
+
+export default memo(MessageBubble);

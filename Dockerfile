@@ -69,6 +69,12 @@ COPY --from=builder --chown=nextjs:nodejs /app/node_modules ./node_modules
 COPY --from=builder --chown=nextjs:nodejs /app/prisma ./prisma
 COPY --from=builder --chown=nextjs:nodejs /app/prisma.config.ts ./prisma.config.ts
 
+# COPY preserves host file modes — with a restrictive host umask (077) the
+# prisma schema lands as 600/owner-only, and the compose runtime user
+# (uid 1000) cannot read it, silently breaking `prisma migrate deploy` at
+# container start (caught as "Migration failed or already applied").
+RUN chmod -R a+rX /app/prisma /app/prisma.config.ts
+
 USER nextjs
 
 EXPOSE 3001
