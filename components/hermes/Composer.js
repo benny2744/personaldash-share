@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   AudioLines,
   Loader2,
@@ -15,6 +15,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { VOICE_MAX_SECONDS } from '@/lib/hermes/voiceRecording';
 import useVoiceDictation from '@/hooks/useVoiceDictation';
+import ComposerGrip from '@/components/chat/ComposerGrip';
 import ModelPicker from './ModelPicker';
 import { cn } from '@/lib/utils';
 
@@ -40,11 +41,28 @@ export default function Composer({
   modelSwitching,
   onSwitchModel,
   liveVoice,
+  composerHeight,
+  onComposerHeightChange,
 }) {
   const fileRef = useRef(null);
+  const textareaRef = useRef(null);
   const [files, setFiles] = useState([]);
   const [fileError, setFileError] = useState('');
   const [processingFiles, setProcessingFiles] = useState([]);
+  // null = auto-grow with content (CSS-capped); a number = manual height set
+  // by dragging the grip. Manual height never exceeds 55dvh via CSS min().
+  const manualHeight =
+    typeof composerHeight === 'number' ? composerHeight : null;
+
+  // Auto-grow: recompute the box height from content on every draft change so
+  // long prompts expand up to the max-h-40 cap instead of scrolling in a
+  // two-row box. Skipped in manual mode (the saved height owns the box).
+  useEffect(() => {
+    const el = textareaRef.current;
+    if (!el || manualHeight != null) return;
+    el.style.height = 'auto';
+    el.style.height = `${el.scrollHeight}px`;
+  }, [value, manualHeight]);
 
   const voice = useVoiceDictation({
     offline,
@@ -98,6 +116,12 @@ export default function Composer({
 
   return (
     <div className="border-t border-[var(--border)] bg-[var(--surface-card)] px-3 py-3 sm:px-4">
+      <ComposerGrip
+        targetRef={textareaRef}
+        height={manualHeight}
+        onChange={onComposerHeightChange}
+        onReset={() => onComposerHeightChange?.(null)}
+      />
       {(statusText || offline || voiceError || fileError || voiceState === 'recording' || liveVoice?.active || liveVoice?.error) && (
         <div className="mb-2 flex flex-wrap items-center gap-2 text-xs text-[var(--text-secondary)]">
           {offline ? <span>Offline — sending disabled</span> : null}
@@ -191,6 +215,7 @@ export default function Composer({
           }}
         />
         <Textarea
+          ref={textareaRef}
           value={value}
           onChange={(event) => handleDraftChange(event.target.value)}
           onKeyDown={onKeyDown}
@@ -203,8 +228,16 @@ export default function Composer({
                 : 'Message Hermes… (Enter to send, Shift+Enter for newline)'
           }
           className={cn(
-            'min-h-[52px] max-h-40 w-full resize-none bg-[var(--surface-container-low)]',
+            'w-full resize-none overflow-y-auto bg-[var(--surface-container-low)]',
+            manualHeight != null
+              ? 'min-h-0'
+              : 'min-h-[52px] max-h-40',
           )}
+          style={
+            manualHeight != null
+              ? { height: `min(${manualHeight}px, 55dvh)` }
+              : undefined
+          }
           rows={2}
         />
         <div className="flex items-center gap-2">

@@ -28,6 +28,8 @@ export function useHermesConnection({
   const reconnectAttempt = useRef(0);
   const intentionalClose = useRef(false);
   const wasRunningOnDisconnect = useRef(false);
+  const reconnectNowRef = useRef(null);
+  const reconnectInFlightRef = useRef(false);
   const ensureConnectedRef = useRef(null);
   const scheduleReconnectRef = useRef(null);
   const onConnectionStateRef = useRef(null);
@@ -51,28 +53,38 @@ export function useHermesConnection({
     onConnectedRef.current = onConnected;
   }, [onConnected]);
 
+  // Shared reconnect attempt body: connect, then rebind the stored session.
+  // Used by both the backoff timer and the foreground (visibility) kick.
+  reconnectNowRef.current = async () => {
+    if (reconnectInFlightRef.current) return;
+    reconnectInFlightRef.current = true;
+    try {
+      await ensureConnectedRef.current?.();
+      const current = getSnapshotRef.current?.();
+      if (current?.storedSessionId) {
+        await resumeSessionRef.current?.(current.storedSessionId, {
+          afterDisconnect: wasRunningOnDisconnect.current,
+        });
+      }
+      wasRunningOnDisconnect.current = false;
+      reconnectAttempt.current = 0;
+    } catch (error) {
+      reconnectAttempt.current += 1;
+      const close = runtime.lastCloseDiagnostic();
+      const base = error.message || String(error);
+      setBootstrapError(close ? `${base} [${close}]` : base);
+      scheduleReconnectRef.current?.();
+    } finally {
+      reconnectInFlightRef.current = false;
+    }
+  };
+
   scheduleReconnectRef.current = () => {
     if (reconnectTimer.current || intentionalClose.current) return;
     const delay = reconnectDelayMs(reconnectAttempt.current);
-    reconnectTimer.current = setTimeout(async () => {
+    reconnectTimer.current = setTimeout(() => {
       reconnectTimer.current = null;
-      try {
-        await ensureConnectedRef.current?.();
-        const current = getSnapshotRef.current?.();
-        if (current?.storedSessionId) {
-          await resumeSessionRef.current?.(current.storedSessionId, {
-            afterDisconnect: wasRunningOnDisconnect.current,
-          });
-        }
-        wasRunningOnDisconnect.current = false;
-        reconnectAttempt.current = 0;
-      } catch (error) {
-        reconnectAttempt.current += 1;
-        const close = runtime.lastCloseDiagnostic();
-        const base = error.message || String(error);
-        setBootstrapError(close ? `${base} [${close}]` : base);
-        scheduleReconnectRef.current?.();
-      }
+      reconnectNowRef.current?.();
     }, delay);
   };
 
@@ -138,6 +150,32 @@ export function useHermesConnection({
       runtime.disconnect();
     };
   }, [cacheStore, runtime]);
+
+  // Foreground kick: browsers throttle timers in background tabs, so a dropped
+  // socket can otherwise wait out the whole backoff chain after the user
+  // returns. Skip the remaining delay and reconnect immediately.
+  useEffect(() => {
+    const kick = () => {
+      if (document.visibilityState !== 'visible') return;
+      if (intentionalClose.current) return;
+      if (runtime.connectionState === 'open') return;
+      if (reconnectTimer.current) {
+        clearTimeout(reconnectTimer.current);
+        reconnectTimer.current = null;
+      }
+      reconnectAttempt.current = 0;
+      reconnectNowRef.current?.();
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') kick();
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    window.addEventListener('focus', kick);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibility);
+      window.removeEventListener('focus', kick);
+    };
+  }, [runtime]);
 
   return { bootstrapError, ensureConnected };
 }

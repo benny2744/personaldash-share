@@ -1,6 +1,7 @@
 import { createReadStream } from 'node:fs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { Readable } from 'node:stream';
 import { NextResponse } from 'next/server';
 import {
   contentTypeForPath,
@@ -8,6 +9,7 @@ import {
   normalizeExchangePath,
   resolveExchangePath,
 } from '@/lib/exchange';
+import { createDirZipStream, zipDownloadName } from '@/lib/files/zipDir';
 import { parseRangeHeader } from '@/lib/readLaterAudio';
 
 export const dynamic = 'force-dynamic';
@@ -28,7 +30,8 @@ function fileStream(fullPath, range) {
 /**
  * GET /api/exchange/download?path=…
  * Streams an exchange file as an attachment, with Range support so media
- * players can seek.
+ * players can seek. Directories stream as a zip archive (entry-by-entry,
+ * flat memory; hidden entries and symlinks skipped).
  */
 export async function GET(request) {
   const { searchParams } = new URL(request.url);
@@ -59,9 +62,24 @@ export async function GET(request) {
     return NextResponse.json({ error: 'File not found' }, { status: 404 });
   }
 
+  if (stats.isDirectory()) {
+    const zipName = zipDownloadName(relativePath);
+    const zipStream = await createDirZipStream(
+      resolveExchangePath(''),
+      relativePath,
+    );
+    return new Response(Readable.toWeb(zipStream), {
+      headers: {
+        'Content-Type': 'application/zip',
+        'Content-Disposition': contentDisposition(zipName),
+        'Cache-Control': 'no-store',
+      },
+    });
+  }
+
   if (!stats.isFile()) {
     return NextResponse.json(
-      { error: 'Directory download is not supported' },
+      { error: 'Not a file or directory' },
       { status: 400 },
     );
   }

@@ -10,6 +10,7 @@ import {
   isMarkdownPath,
   isTextPath,
 } from '@/lib/hermes/filePreview';
+import { isAudioPath, isPdfPath, isVideoPath } from '@/lib/files/previewTypes';
 import PreviewDrawerShell from '@/components/files/PreviewDrawerShell';
 
 const MARKDOWN_PROSE_CLASSES =
@@ -60,6 +61,24 @@ export default function FilePreviewDrawer({
       mime: '',
     });
 
+    // PDF/audio/video render straight from the download URL — the exchange
+    // and vault download routes support HTTP Range, so players can stream
+    // and seek without the drawer pulling the whole file as a blob.
+    if (
+      isPdfPath(file.name) ||
+      isAudioPath(file.name) ||
+      isVideoPath(file.name)
+    ) {
+      setState({
+        loading: false,
+        error: null,
+        text: '',
+        objectUrl: null,
+        mime: '',
+      });
+      return undefined;
+    }
+
     (async () => {
       try {
         const res = await fetch(
@@ -107,11 +126,42 @@ export default function FilePreviewDrawer({
         objectUrlRef.current = null;
       }
     };
-  }, [file?.path, downloadBase]);
+  }, [file?.path, file.name, downloadBase]);
 
   if (!file?.path) return null;
 
   const markdown = isMarkdownPath(file.name) || state.mime === 'text/markdown';
+  const directUrl = `${downloadBase}?path=${encodeURIComponent(file.path)}`;
+  const isPdf = isPdfPath(file.name);
+  const isAudio = isAudioPath(file.name);
+  const isVideo = isVideoPath(file.name);
+
+  let mediaContent = null;
+  if (!state.loading && !state.error) {
+    if (isPdf) {
+      mediaContent = (
+        <iframe
+          src={directUrl}
+          title={file.name}
+          className="h-[68vh] min-h-[20rem] w-full rounded-lg border border-[color:color-mix(in_srgb,var(--outline)_30%,transparent)] bg-white"
+        />
+      );
+    } else if (isVideo) {
+      mediaContent = (
+        <video
+          controls
+          src={directUrl}
+          className="mx-auto max-h-[68vh] w-full rounded-lg"
+        />
+      );
+    } else if (isAudio) {
+      mediaContent = (
+        <div className="flex h-40 items-center justify-center">
+          <audio controls src={directUrl} className="w-full max-w-md" />
+        </div>
+      );
+    }
+  }
 
   return (
     <PreviewDrawerShell
@@ -120,7 +170,7 @@ export default function FilePreviewDrawer({
       onClose={onClose}
       actions={
         <a
-          href={`${downloadBase}?path=${encodeURIComponent(file.path)}`}
+          href={directUrl}
           download={file.name}
           aria-label="Download file"
           title={`Download ${file.name}`}
@@ -139,6 +189,8 @@ export default function FilePreviewDrawer({
           <p className="rounded-lg bg-[var(--error-container)]/20 p-4 text-sm text-[var(--on-error-container)]">
             {state.error}
           </p>
+        ) : mediaContent ? (
+          mediaContent
         ) : state.objectUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img

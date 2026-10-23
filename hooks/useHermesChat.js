@@ -14,6 +14,12 @@ import { prepareAttachments } from '@/lib/hermes/attachments';
 import { reconcileTranscript } from '@/lib/hermes/transcriptSync';
 import { resolveResumeTarget } from '@/lib/hermes/resumeTarget';
 import {
+  createOverrideCandidates,
+  isCreateOverrideRejection,
+  mirrorRefusedSwitch,
+  modelSwitchValue,
+} from '@/lib/hermes/modelSwitch';
+import {
   loadDraft,
   loadPanelState,
   saveDraft,
@@ -53,6 +59,22 @@ export function useHermesChat() {
   useEffect(() => {
     pendingModelRef.current = pendingModel;
   }, [pendingModel]);
+
+  // Whether a turn has completed on the current session since it was bound.
+  // The gateway's config.set model path (fast switch) is only reliable after
+  // the session's agent has survived a turn — before that it resolves but is
+  // silently dropped by the later agent build (useHermesModels routes around
+  // this with the slower slash path; see lib/hermes/modelSwitch.js).
+  const [turnRanSinceBind, setTurnRanSinceBind] = useState(false);
+  const wasRunningRef = useRef(false);
+  useEffect(() => {
+    if (wasRunningRef.current && !state.running) setTurnRanSinceBind(true);
+    wasRunningRef.current = state.running;
+  }, [state.running]);
+  const resetTurnRanSinceBind = useCallback(() => {
+    wasRunningRef.current = false;
+    setTurnRanSinceBind(false);
+  }, []);
   const runtimesRef = useRef(new Map());
   const getRuntime = useCallback((profile) => {
     const key = profile || '';
@@ -69,6 +91,22 @@ export function useHermesChat() {
   const stateRef = useRef(state);
   const resumeSessionRef = useRef(null);
   const sessionGenRef = useRef(0);
+  // True while a session switch (resume/create) is in flight: sendMessage and
+  // sendLiveTurn refuse to run, and the composer is disabled, so a typed
+  // message can never land in the session being left.
+  const switchingRef = useRef(false);
+  // Default model for sessions created without an explicit picker choice: the
+  // fast tier (resolved in useHermesModels below). Ref because createSession
+  // is defined before that hook runs; synced via effect.
+  const defaultModelRef = useRef(null);
+  // Stable settle handle for sends: resolves when an in-flight model switch
+  // finishes, so a submitted turn always runs on the picked model. Declared
+  // with the other refs; synced from modelsApi via effect below.
+  const settleModelSwitchRef = useRef(null);
+  // True while the model catalog / tier registry is still loading. createSession
+  // waits (bounded) on this so a fresh page's first message deterministically
+  // gets the fast default instead of silently staying on the profile default.
+  const modelsLoadingRef = useRef(true);
   // Generation boundary for profile switches: every async continuation
   // captures the current profile generation and abandons work if it changed.
   const profileGenRef = useRef(0);
@@ -105,8 +143,16 @@ export function useHermesChat() {
     (event) => {
       dispatch({ type: 'event', payload: event });
       // Write-through: snapshot the transcript when a turn completes
-      // (debounced — streaming deltas never hit the cache).
-      if (event?.params?.type === 'message.complete') {
+      // (debounced — streaming deltas never hit the cache). Gateway events
+      // arrive as {type, payload, session_id} (frame.params) — there is no
+      // `.params` on the dispatched shape; gate on the open session so another
+      // session's completion can't snapshot this view mid-turn.
+      if (
+        event?.type === 'message.complete' &&
+        (!event.session_id ||
+          !stateRef.current.liveSessionId ||
+          event.session_id === stateRef.current.liveSessionId)
+      ) {
         if (transcriptWriteTimer.current)
           clearTimeout(transcriptWriteTimer.current);
         transcriptWriteTimer.current = setTimeout(() => {
@@ -185,33 +231,129 @@ export function useHermesChat() {
   } = sessionsApi;
 
   const createSession = useCallback(async () => {
-    await ensureConnected();
-    const pending = pendingModelRef.current;
-    const result = await runtime.sessions.create({
-      source: 'personaldash',
-      ...(pending?.id
-        ? {
-            model: pending.id,
-            ...(pending.provider ? { provider: pending.provider } : {}),
-          }
-        : {}),
-    });
+    // Creation is a generation boundary: invalidate any in-flight resume/create
+    // continuation so a stale session.bound can never land after this bind.
+    const gen = ++sessionGenRef.current;
+    const previousLiveSessionId = stateRef.current.liveSessionId;
+    switchingRef.current = true;
     dispatch({
-      type: 'session.bound',
-      payload: {
-        liveSessionId: result.session_id,
-        storedSessionId: result.stored_session_id || result.session_id,
-        title: result.info?.title || 'New chat',
-        model: result.info?.model,
-      },
+      type: 'session.switching',
+      payload: { previousLiveSessionId },
     });
-    dispatch({ type: 'history.loaded', payload: { messages: [] } });
-    setDraft(loadDraft('new'));
-    // The pending choice is now applied and confirmed by session.bound; drop it.
-    if (pending?.id) setPendingModel(null);
-    await refreshSessions();
-    return result;
-  }, [ensureConnected, refreshSessions, runtime, setPendingModel]);
+    try {
+      await ensureConnected();
+      if (gen !== sessionGenRef.current) return null;
+      // Explicit picker choice wins; otherwise the chat default (fast tier).
+      // Fresh page → first message can race the catalog/tier load; without a
+      // resolved default no post-bind switch runs and the chat silently stays
+      // on the profile default. Wait briefly for the catalog to settle; if it
+      // never does (e.g. the tier fetch failed), proceed rather than block.
+      if (!pendingModelRef.current) {
+        const deadline = Date.now() + 2500;
+        while (
+          !defaultModelRef.current &&
+          modelsLoadingRef.current &&
+          Date.now() < deadline
+        ) {
+          await new Promise((resolve) => setTimeout(resolve, 100));
+          if (gen !== sessionGenRef.current) return null;
+        }
+      }
+      // Falls back to the Hermes profile default when neither is resolved yet.
+      const pending = pendingModelRef.current || defaultModelRef.current;
+      // Preferred path: pass the model+provider straight into session.create —
+      // instant, and the agent builds ON the picked model (no post-bind switch
+      // window at all). The create path validates the pair against its curated
+      // per-provider catalogs, which differ from the picker's credential-pool
+      // groups, so try the model's providers in preference order (openai-codex
+      // ahead of the profile's LiteLLM slot for the OpenAI family) until one
+      // is accepted; only a catalog rejection falls through to the next.
+      const candidates = createOverrideCandidates(pending);
+      let result = null;
+      for (const candidate of candidates) {
+        try {
+          result = await runtime.sessions.create({
+            source: 'personaldash',
+            model: candidate.id,
+            provider: candidate.provider,
+          });
+          break;
+        } catch (error) {
+          if (!isCreateOverrideRejection(error)) throw error;
+        }
+      }
+      if (!result) {
+        result = await runtime.sessions.create({ source: 'personaldash' });
+      }
+      if (gen !== sessionGenRef.current) return null;
+      resetTurnRanSinceBind();
+      dispatch({
+        type: 'session.bound',
+        payload: {
+          liveSessionId: result.session_id,
+          storedSessionId: result.stored_session_id || result.session_id,
+          title: result.info?.title || 'New chat',
+          model: result.info?.model,
+        },
+      });
+      // Fallback path (create-override rejected or no attributed provider):
+      // apply the pick as a session-scoped /model switch after the bind. The
+      // slash mirror accepts pairs the create catalog rejects and the gateway
+      // resolves the true serving provider at inference. Both serving paths
+      // for the fast default are honest — `openai-codex` (ChatGPT Codex
+      // backend) and `alibaba` (credential slot repurposed to the local
+      // LiteLLM gateway, which routes luna to OpenAI) both serve gpt-6-luna
+      // as gpt-6-luna (verified via session_model_usage 10-21) — so
+      // attribution drift between them is harmless. A non-empty warning means
+      // the live mirror did NOT apply (busy session) — surfaced, not swallowed.
+      if (pending?.id && result.info?.model !== pending.id) {
+        try {
+          // Preferred provider first — NOT whichever attribution happened to
+          // be current: the slash mirror accepts any listed pair (including
+          // the LiteLLM slot), so the preference, not validation, picks the
+          // serving path here.
+          const switched = await runtime.commands.exec({
+            sessionId: result.session_id,
+            command: `/model ${modelSwitchValue(
+              pending.id,
+              candidates[0]?.provider,
+            )}`,
+          });
+          if (mirrorRefusedSwitch(switched?.warning)) {
+            throw new Error(String(switched.warning).trim());
+          }
+        } catch (error) {
+          // The bound model is already reflected and the session stays usable,
+          // but it is now on the profile default instead of the requested
+          // model — that mismatch must be visible, not silently swallowed
+          // (a swallowed failure looked like "the default model loaded wrong").
+          dispatch({
+            type: 'error',
+            payload: {
+              message: `Model switch failed (${
+                error?.message || error
+              }) — chat stays on the profile default.`,
+            },
+          });
+        }
+      }
+      dispatch({ type: 'history.loaded', payload: { messages: [] } });
+      setDraft(loadDraft('new'));
+      // The pending choice is now applied and confirmed by session.bound; drop it.
+      if (pendingModelRef.current?.id) setPendingModel(null);
+      await refreshSessions();
+      return result;
+    } finally {
+      // A newer switch owns the flag; only the current generation releases it.
+      if (gen === sessionGenRef.current) switchingRef.current = false;
+    }
+  }, [
+    ensureConnected,
+    refreshSessions,
+    resetTurnRanSinceBind,
+    runtime,
+    setPendingModel,
+  ]);
 
   // Rehydrate prompts the client missed while detached. `session.resume`
   // returns the open server→client requests (`open_requests`, answerable in
@@ -296,148 +438,201 @@ export function useHermesChat() {
         gen === sessionGenRef.current && pgen === profileGenRef.current;
       const openedAt = Date.now();
       let warm = false;
+      let cached = null;
+      const previous = {
+        liveSessionId: stateRef.current.liveSessionId,
+        storedSessionId: stateRef.current.storedSessionId,
+        title: stateRef.current.title,
+        model: stateRef.current.model,
+      };
 
-      // Local-first: render the cached snapshot before any network roundtrip.
-      const cached = await readTranscript(cacheStore(), sessionId, profile);
-      if (cached && isCurrent()) {
-        warm = true;
+      // Session switch boundary: clear the previous session's transcript and
+      // transient state up front (the warm-cache read below repaints within a
+      // tick) so nothing from it can render or be sent while this switch
+      // resolves. switchingRef blocks sends until the bind completes. The
+      // pending pre-session model pick dies here too: it belonged to the
+      // abandoned new chat, and surviving a resume would make the picker lie
+      // about this session and silently hijack the next createSession.
+      switchingRef.current = true;
+      setPendingModel(null);
+      resetTurnRanSinceBind();
+      dispatch({
+        type: 'session.switching',
+        payload: { previousLiveSessionId: previous.liveSessionId },
+      });
+      try {
+        // Local-first: render the cached snapshot before any network roundtrip.
+        cached = await readTranscript(cacheStore(), sessionId, profile);
+        if (cached && isCurrent()) {
+          warm = true;
+          dispatch({
+            type: 'history.loaded',
+            payload: {
+              messages: cached.messages,
+              title: cached.title,
+              fromCache: true,
+            },
+          });
+          markSync(cacheStore(), 'agent-open', {
+            warm: true,
+            openMs: Date.now() - openedAt,
+          });
+        }
+
+        await ensureConnected();
+        if (!isCurrent()) return null;
+
+        // Resolve to the live session tip (compression continuations branch the
+        // id). resolveResumeTarget refuses delegate/branch/reset children, which
+        // the REST latest-descendant endpoint does not filter — resuming one of
+        // those renders the sub-agent's internal transcript and poisons the
+        // parent's transcript cache via aliasing.
+        const targetId = await resolveResumeTarget(sessionId, {
+          getLatestDescendant: runtime.sessions.getLatestDescendant,
+          getSession: runtime.sessions.get,
+        });
+        if (!isCurrent()) return null;
+
+        // Bind the live session via WS. The RPC history projection lacks DB ids,
+        // so we ignore result.messages here and fetch authoritative REST rows.
+        const result = await runtime.sessions.resume(targetId);
+        if (!isCurrent()) return null;
+
+        const liveSessionId = result.session_id || targetId;
+        const storedSessionId =
+          result.stored_session_id ||
+          result.info?.stored_session_id ||
+          targetId;
+        const title = result.info?.title || result.title || cached?.title || '';
+
         dispatch({
-          type: 'history.loaded',
+          type: 'session.bound',
           payload: {
-            messages: cached.messages,
-            title: cached.title,
-            fromCache: true,
+            liveSessionId,
+            storedSessionId,
+            title,
+            model: result.info?.model,
           },
         });
-        markSync(cacheStore(), 'agent-open', {
-          warm: true,
-          openMs: Date.now() - openedAt,
-        });
-      }
 
-      await ensureConnected();
-      if (!isCurrent()) return null;
+        // One-shot usage snapshot: the ~1/s ticker only runs mid-turn, so a
+        // resumed session would otherwise show nothing until the next prompt.
+        // The result also seeds the baseline so live deltas stack on top of the
+        // cold REST row instead of double-counting (or masking) history.
+        runtime.sessions
+          .usage(liveSessionId)
+          .then((usage) => {
+            if (!isCurrent()) return;
+            dispatch({ type: 'usage.baseline', payload: usage });
+            dispatch({ type: 'usage.set', payload: usage });
+          })
+          .catch(() => {});
 
-      // Resolve to the live session tip (compression continuations branch the
-      // id). resolveResumeTarget refuses delegate/branch/reset children, which
-      // the REST latest-descendant endpoint does not filter — resuming one of
-      // those renders the sub-agent's internal transcript and poisons the
-      // parent's transcript cache via aliasing.
-      const targetId = await resolveResumeTarget(sessionId, {
-        getLatestDescendant: runtime.sessions.getLatestDescendant,
-        getSession: runtime.sessions.get,
-      });
-      if (!isCurrent()) return null;
+        // Fetch cheap metadata, then use the integer message id cursor to decide
+        // whether we can skip transfer, append a tail, or need a full replace.
+        let sessionRow;
+        try {
+          sessionRow = await runtime.sessions.get(storedSessionId);
+        } catch {
+          sessionRow = null;
+        }
+        if (!isCurrent()) return null;
+        // Cold stats: the REST row carries lifetime token/cost/count columns
+        // the live usage ticker never reports (resumed + ended sessions).
+        dispatch({ type: 'stats.cold', payload: sessionRow });
 
-      // Bind the live session via WS. The RPC history projection lacks DB ids,
-      // so we ignore result.messages here and fetch authoritative REST rows.
-      const result = await runtime.sessions.resume(targetId);
-      if (!isCurrent()) return null;
-
-      const liveSessionId = result.session_id || targetId;
-      const storedSessionId =
-        result.stored_session_id || result.info?.stored_session_id || targetId;
-      const title = result.info?.title || result.title || cached?.title || '';
-
-      dispatch({
-        type: 'session.bound',
-        payload: {
-          liveSessionId,
+        const reconciliation = await reconcileTranscript({
+          cached,
+          sessionRow,
           storedSessionId,
-          title,
-          model: result.info?.model,
-        },
-      });
+          rpcMessages: result.messages,
+          isCurrent,
+          fetchMessages: runtime.sessions.getMessages,
+        });
+        if (!isCurrent()) return null;
+        if (reconciliation.status === 'rpc-fallback') {
+          dispatch({
+            type: 'history.loaded',
+            payload: {
+              messages: reconciliation.messages,
+              title,
+              provisional: true,
+            },
+          });
+          dispatchPendingPrompts(result, liveSessionId);
+          return result;
+        }
 
-      // One-shot usage snapshot: the ~1/s ticker only runs mid-turn, so a
-      // resumed session would otherwise show nothing until the next prompt.
-      // The result also seeds the baseline so live deltas stack on top of the
-      // cold REST row instead of double-counting (or masking) history.
-      runtime.sessions
-        .usage(liveSessionId)
-        .then((usage) => {
-          if (!isCurrent()) return;
-          dispatch({ type: 'usage.baseline', payload: usage });
-          dispatch({ type: 'usage.set', payload: usage });
-        })
-        .catch(() => {});
+        const { messages, cursor, mode: syncMode } = reconciliation;
 
-      // Fetch cheap metadata, then use the integer message id cursor to decide
-      // whether we can skip transfer, append a tail, or need a full replace.
-      let sessionRow;
-      try {
-        sessionRow = await runtime.sessions.get(storedSessionId);
-      } catch {
-        sessionRow = null;
-      }
-      if (!isCurrent()) return null;
-      // Cold stats: the REST row carries lifetime token/cost/count columns
-      // the live usage ticker never reports (resumed + ended sessions).
-      dispatch({ type: 'stats.cold', payload: sessionRow });
-
-      const reconciliation = await reconcileTranscript({
-        cached,
-        sessionRow,
-        storedSessionId,
-        rpcMessages: result.messages,
-        isCurrent,
-        fetchMessages: runtime.sessions.getMessages,
-      });
-      if (!isCurrent()) return null;
-      if (reconciliation.status === 'rpc-fallback') {
         dispatch({
           type: 'history.loaded',
           payload: {
-            messages: reconciliation.messages,
+            messages,
             title,
-            provisional: true,
+            storedSessionId,
           },
         });
         dispatchPendingPrompts(result, liveSessionId);
-        return result;
-      }
 
-      const { messages, cursor, mode: syncMode } = reconciliation;
-
-      dispatch({
-        type: 'history.loaded',
-        payload: {
-          messages,
-          title,
+        // Authoritative snapshot replaces cache; alias under every id so the next
+        // open finds it regardless of which id the sidebar supplied.
+        await writeTranscript(
+          cacheStore(),
           storedSessionId,
-        },
-      });
-      dispatchPendingPrompts(result, liveSessionId);
+          {
+            messages,
+            title,
+            canonicalCount: cursor.canonicalCount,
+            messageCount: cursor.messageCount,
+            lastMessageId: cursor.lastMessageId,
+            lastActivityAt: cursor.lastActivityAt,
+          },
+          { aliases: [sessionId, targetId, liveSessionId], profile },
+        );
+        markSync(cacheStore(), 'agent-open', {
+          warm,
+          openMs: warm ? undefined : Date.now() - openedAt,
+          reconcileMs: Date.now() - openedAt,
+          mode: syncMode,
+        });
 
-      // Authoritative snapshot replaces cache; alias under every id so the next
-      // open finds it regardless of which id the sidebar supplied.
-      await writeTranscript(
-        cacheStore(),
-        storedSessionId,
-        {
-          messages,
-          title,
-          canonicalCount: cursor.canonicalCount,
-          messageCount: cursor.messageCount,
-          lastMessageId: cursor.lastMessageId,
-          lastActivityAt: cursor.lastActivityAt,
-        },
-        { aliases: [sessionId, targetId, liveSessionId], profile },
-      );
-      markSync(cacheStore(), 'agent-open', {
-        warm,
-        openMs: warm ? undefined : Date.now() - openedAt,
-        reconcileMs: Date.now() - openedAt,
-        mode: syncMode,
-      });
+        if (afterDisconnect) {
+          dispatch({ type: 'mark.interrupted' });
+        }
 
-      if (afterDisconnect) {
-        dispatch({ type: 'mark.interrupted' });
+        setDraft(loadDraft(storedSessionId));
+        await refreshSessions();
+        return result;
+      } catch (error) {
+        if (isCurrent()) {
+          // Restore the prior view (previous binding + cached transcript) so a
+          // failed open doesn't strand an empty, send-locked chat.
+          dispatch({
+            type: 'session.bound',
+            payload: previous.liveSessionId
+              ? previous
+              : { liveSessionId: null, storedSessionId: null },
+          });
+          dispatch({
+            type: 'history.loaded',
+            payload: {
+              messages: cached?.messages || [],
+              title: previous.title,
+            },
+          });
+          dispatch({
+            type: 'error',
+            payload: {
+              message: `Could not open session — ${error?.message || error}`,
+            },
+          });
+        }
+        throw error;
+      } finally {
+        // A newer switch owns the flag; only the current generation releases it.
+        if (isCurrent()) switchingRef.current = false;
       }
-
-      setDraft(loadDraft(storedSessionId));
-      await refreshSessions();
-      return result;
     },
     [
       cacheStore,
@@ -445,7 +640,9 @@ export function useHermesChat() {
       ensureConnected,
       profile,
       refreshSessions,
+      resetTurnRanSinceBind,
       runtime,
+      setPendingModel,
     ],
   );
 
@@ -465,6 +662,9 @@ export function useHermesChat() {
     async (text, attachments = []) => {
       const trimmed = String(text || '').trim();
       if (!trimmed && attachments.length === 0) return;
+      // A session switch is in flight (composer is disabled): never let a
+      // message land in the session being left.
+      if (switchingRef.current) return;
 
       await ensureConnected();
       let liveSessionId = stateRef.current.liveSessionId;
@@ -472,9 +672,15 @@ export function useHermesChat() {
 
       if (!liveSessionId) {
         const created = await createSession();
+        if (!created) return; // superseded by a newer switch mid-create
         liveSessionId = created.session_id;
         storedSessionId = created.stored_session_id || created.session_id;
       }
+      // A model pick still switching (the first slash path forks an ~8s
+      // worker): wait it out, or the gateway refuses the live mirror
+      // ("session busy") and the turn runs on the OLD model while the label
+      // shows the new one — exactly the "reverts when I send" symptom.
+      await settleModelSwitchRef.current?.();
 
       const images = attachments.filter((file) =>
         String(file.type || '').startsWith('image/'),
@@ -538,14 +744,21 @@ export function useHermesChat() {
     async (text, voiceContext = '') => {
       const trimmed = String(text || '').trim();
       if (!trimmed) return;
+      // Same switch guard as sendMessage: never delegate into the session
+      // being left.
+      if (switchingRef.current) return;
 
       await ensureConnected();
       let liveSessionId = stateRef.current.liveSessionId;
 
       if (!liveSessionId) {
         const created = await createSession();
+        if (!created) return; // superseded by a newer switch mid-create
         liveSessionId = created.session_id;
       }
+      // Same contract as sendMessage: never submit while a model switch is
+      // still being applied.
+      await settleModelSwitchRef.current?.();
 
       dispatch({
         type: 'user.message',
@@ -776,8 +989,22 @@ export function useHermesChat() {
     ready: state.connectionState === 'open',
     pendingModel,
     setPendingModel,
+    sessionRunning: state.running,
+    turnRanSinceBind,
     onError: handleModelError,
   });
+
+  useEffect(() => {
+    defaultModelRef.current = modelsApi.defaultModel;
+  }, [modelsApi.defaultModel]);
+
+  useEffect(() => {
+    settleModelSwitchRef.current = modelsApi.settlePendingSwitch;
+  }, [modelsApi.settlePendingSwitch]);
+
+  useEffect(() => {
+    modelsLoadingRef.current = modelsApi.loading;
+  }, [modelsApi.loading]);
 
   return {
     state,
@@ -812,6 +1039,7 @@ export function useHermesChat() {
     models: modelsApi.models,
     currentModel: modelsApi.currentModel,
     currentTier: modelsApi.currentTier,
+    defaultModel: modelsApi.defaultModel,
     modelsLoading: modelsApi.loading,
     modelSwitching: modelsApi.switching,
     switchModel: modelsApi.switchModel,

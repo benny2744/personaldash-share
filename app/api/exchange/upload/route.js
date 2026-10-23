@@ -9,6 +9,7 @@ import {
   statExchangePath,
   writeExchangeStream,
 } from '@/lib/exchange';
+import { uploadPathSegments } from '@/lib/files/uploadPaths';
 import config from '@/lib/config';
 
 export const dynamic = 'force-dynamic';
@@ -17,12 +18,16 @@ export const runtime = 'nodejs';
 const STREAM_THRESHOLD_BYTES = 8 * 1024 * 1024;
 
 /**
- * POST /api/exchange/upload?path=<target dir>
+ * POST /api/exchange/upload?path=<target dir>[&createDirs=1]
  * multipart/form-data with a `file` field. Stores the file in the exchange
  * (never overwrites — collisions get a -2 suffix). No processing: pure drop.
+ * `createDirs=1` (folder uploads only) lets nested target dirs be created
+ * on demand; the client-supplied dir path is still re-sanitized segment by
+ * segment server-side, never trusted.
  */
 export async function POST(request) {
   const { searchParams } = new URL(request.url);
+  const createDirs = searchParams.get('createDirs') === '1';
   const targetDir = normalizeExchangePath(searchParams.get('path') || 'inbox');
 
   if (!targetDir || targetDir.endsWith('/')) {
@@ -33,6 +38,17 @@ export async function POST(request) {
   }
   if (isHidden(targetDir)) {
     return NextResponse.json({ error: 'Forbidden path' }, { status: 403 });
+  }
+
+  let safeTargetDir = targetDir;
+  if (createDirs) {
+    // Re-derive the dir from sanitized segments; traversal/hidden segments
+    // from the folder upload are rejected here regardless of client checks.
+    const segments = uploadPathSegments(targetDir);
+    if (!segments) {
+      return NextResponse.json({ error: 'Forbidden path' }, { status: 403 });
+    }
+    safeTargetDir = segments.join('/');
   }
 
   let form;
@@ -58,9 +74,10 @@ export async function POST(request) {
     );
   }
 
-  // Reject a target dir that exists as a file before writing.
+  // Reject a target dir that exists as a file before writing. In
+  // createDirs mode a missing dir is fine — writeExchangeStream mkdirs it.
   try {
-    const dirStats = await statExchangePath(targetDir);
+    const dirStats = await statExchangePath(safeTargetDir);
     if (!dirStats.isDirectory()) {
       return NextResponse.json(
         { error: 'Target is not a directory' },
@@ -68,10 +85,12 @@ export async function POST(request) {
       );
     }
   } catch {
-    return NextResponse.json(
-      { error: 'Target directory not found' },
-      { status: 404 },
-    );
+    if (!createDirs) {
+      return NextResponse.json(
+        { error: 'Target directory not found' },
+        { status: 404 },
+      );
+    }
   }
 
   let relativePath;
@@ -81,7 +100,7 @@ export async function POST(request) {
     const cleanName = sanitizeExchangeFilename(
       path.basename(file.name || 'file'),
     );
-    relativePath = path.posix.join(targetDir, cleanName);
+    relativePath = path.posix.join(safeTargetDir, cleanName);
     resolveExchangePath(relativePath); // escape guard before writing
 
     let savedPath;

@@ -26,31 +26,12 @@ import {
 } from '@/components/ui/table';
 import { cn } from '@/lib/utils';
 import { sortVaultEntries } from '@/lib/files/vaultSort';
+import { isPreviewableName } from '@/lib/files/previewTypes';
 import NotePreviewDrawer from '@/components/files/NotePreviewDrawer';
 import FilePreviewDrawer from '@/components/files/FilePreviewDrawer';
 
-const PREVIEWABLE_EXTENSIONS = [
-  '.md',
-  '.markdown',
-  '.txt',
-  '.csv',
-  '.json',
-  '.html',
-  '.png',
-  '.jpg',
-  '.jpeg',
-  '.gif',
-  '.webp',
-  '.svg',
-];
-
 function isMarkdownName(name) {
   return /\.(md|markdown)$/i.test(name);
-}
-
-function isPreviewableName(name) {
-  const lower = name.toLowerCase();
-  return PREVIEWABLE_EXTENSIONS.some((ext) => lower.endsWith(ext));
 }
 
 function formatBytes(bytes) {
@@ -304,31 +285,44 @@ export default function VaultBrowser() {
                         )}
                       </TableCell>
                       <TableCell className="text-right">
-                        {entry.type === 'file' && (
-                          <div className="flex items-center justify-end gap-0.5">
-                            {isPreviewableName(entry.name) && (
-                              <button
-                                type="button"
-                                onClick={() => openFile(entry)}
-                                aria-label={`Preview ${entry.name}`}
-                                title={`Preview ${entry.name}`}
-                                className="rounded p-1.5 text-[var(--text-secondary)] hover:bg-[var(--surface-container-low)] hover:text-[var(--text-primary)]"
-                              >
-                                <Eye size={14} />
-                              </button>
-                            )}
+                        <div className="flex items-center justify-end gap-0.5">
+                          {entry.type === 'directory' ? (
                             <a
                               href={`/api/vault/download?path=${encodeURIComponent(entry.path)}`}
-                              download={entry.name}
+                              download={`${entry.name}.zip`}
                               onClick={(event) => event.stopPropagation()}
-                              aria-label={`Download ${entry.name}`}
-                              title={`Download ${entry.name}`}
+                              aria-label={`Download ${entry.name} as zip`}
+                              title={`Download ${entry.name} as zip`}
                               className="rounded p-1.5 text-[var(--text-secondary)] hover:bg-[var(--surface-container-low)] hover:text-[var(--text-primary)]"
                             >
                               <Download size={14} />
                             </a>
-                          </div>
-                        )}
+                          ) : (
+                            <>
+                              {isPreviewableName(entry.name) && (
+                                <button
+                                  type="button"
+                                  onClick={() => openFile(entry)}
+                                  aria-label={`Preview ${entry.name}`}
+                                  title={`Preview ${entry.name}`}
+                                  className="rounded p-1.5 text-[var(--text-secondary)] hover:bg-[var(--surface-container-low)] hover:text-[var(--text-primary)]"
+                                >
+                                  <Eye size={14} />
+                                </button>
+                              )}
+                              <a
+                                href={`/api/vault/download?path=${encodeURIComponent(entry.path)}`}
+                                download={entry.name}
+                                onClick={(event) => event.stopPropagation()}
+                                aria-label={`Download ${entry.name}`}
+                                title={`Download ${entry.name}`}
+                                className="rounded p-1.5 text-[var(--text-secondary)] hover:bg-[var(--surface-container-low)] hover:text-[var(--text-primary)]"
+                              >
+                                <Download size={14} />
+                              </a>
+                            </>
+                          )}
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))}

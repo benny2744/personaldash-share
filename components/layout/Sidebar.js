@@ -20,7 +20,7 @@ import {
   Zap,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { getOpencodeFrameUrl } from '@/lib/opencodeFrameUrl';
+import { getOpencodeHosts } from '@/lib/opencodeFrameUrl';
 import { cn } from '@/lib/utils';
 import { useMobileNav } from './MobileNavContext';
 
@@ -133,9 +133,10 @@ export default function Sidebar() {
           {NAV_ITEMS.filter(
             (item) =>
               !item.requiresOpencode ||
-              Boolean(
-                getOpencodeFrameUrl(process.env.NEXT_PUBLIC_OPENCODE_URL),
-              ),
+              getOpencodeHosts(
+                process.env.NEXT_PUBLIC_OPENCODE_HOSTS,
+                process.env.NEXT_PUBLIC_OPENCODE_URL,
+              ).length > 0,
           ).map((item) => (
             <li key={item.href}>
               {item.external ? (

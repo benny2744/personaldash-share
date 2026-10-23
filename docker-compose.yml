@@ -21,6 +21,7 @@ services:
         NEXT_PUBLIC_HOST_BRAIN_DIR: ${NEXT_PUBLIC_HOST_BRAIN_DIR:-brain}
         NEXT_PUBLIC_HOST_EXCHANGE_DIR: ${NEXT_PUBLIC_HOST_EXCHANGE_DIR:-exchange}
         NEXT_PUBLIC_OPENCODE_URL: ${NEXT_PUBLIC_OPENCODE_URL:-}
+        NEXT_PUBLIC_OPENCODE_HOSTS: ${NEXT_PUBLIC_OPENCODE_HOSTS:-}
     container_name: workdash
     # Match the host uid that owns the vault and the dws config dirs, so
     # frontmatter write-back and dws token refresh are permitted, e.g.:

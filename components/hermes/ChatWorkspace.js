@@ -1,6 +1,12 @@
 'use client';
 
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from 'react';
 import { useSearchParams } from 'next/navigation';
 import {
   PanelLeftClose,
@@ -60,6 +66,16 @@ export default function ChatWorkspace({ chat, isOnline }) {
     if (hydrated) savePanelState(panels);
   }, [panels, hydrated]);
 
+  // Composer height setters: a number pins the box (panelState clamps +
+  // persists), null returns it to auto-grow. Stable so the composers' drag
+  // handlers can call them freely.
+  const handleComposerHeightChange = useCallback((height) => {
+    setPanels((current) => ({ ...current, composerHeight: height }));
+  }, []);
+  const handleDingTalkComposerHeightChange = useCallback((height) => {
+    setPanels((current) => ({ ...current, dingtalkComposerHeight: height }));
+  }, []);
+
   const centerMinWidth = 420;
   const dividerWidth = 4;
   const canDockSessions =
@@ -106,6 +122,8 @@ export default function ChatWorkspace({ chat, isOnline }) {
         <DingTalkClient
           sidebarWidth={panels.sessionsWidth}
           initialActiveId={initialDingTalkConversationId}
+          composerHeight={panels.dingtalkComposerHeight}
+          onComposerHeightChange={handleDingTalkComposerHeightChange}
         />
       </div>
     );
@@ -277,16 +295,26 @@ export default function ChatWorkspace({ chat, isOnline }) {
             onSend={chat.sendMessage}
             onStop={chat.stop}
             running={chat.state.running}
-            disabled={Boolean(chat.bootstrapError)}
+            disabled={
+              Boolean(chat.bootstrapError) || Boolean(chat.state.switching)
+            }
             offline={!isOnline}
             statusText={chat.state.statusText}
             models={chat.models}
             currentModel={chat.currentModel}
             currentTier={chat.currentTier}
-            pendingModel={chat.pendingModel}
+            pendingModel={
+              // Live session: the picker must reflect session.info truth — a
+              // pre-session pick that survived a resume never overrides it.
+              chat.state.liveSessionId || chat.state.storedSessionId
+                ? null
+                : chat.pendingModel || chat.defaultModel
+            }
             modelsLoading={chat.modelsLoading}
             modelSwitching={chat.modelSwitching}
             onSwitchModel={chat.switchModel}
+            composerHeight={panels.composerHeight}
+            onComposerHeightChange={handleComposerHeightChange}
           />
         </div>
 

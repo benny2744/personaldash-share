@@ -21,7 +21,12 @@ function useMediaQuery(query) {
   return matches;
 }
 
-export default function DingTalkClient({ sidebarWidth, initialActiveId }) {
+export default function DingTalkClient({
+  sidebarWidth,
+  initialActiveId,
+  composerHeight,
+  onComposerHeightChange,
+}) {
   const dingtalk = useDingTalkChat();
   const isMobile = useMediaQuery('(max-width: 900px)');
   const showSidebar = !isMobile || !dingtalk.activeId;
@@ -77,6 +82,8 @@ export default function DingTalkClient({ sidebarWidth, initialActiveId }) {
             sending={dingtalk.sending}
             disabled={!dingtalk.activeId}
             error={dingtalk.sendError}
+            composerHeight={composerHeight}
+            onComposerHeightChange={onComposerHeightChange}
           />
         </div>
       ) : null}

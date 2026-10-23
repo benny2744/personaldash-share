@@ -1,8 +1,10 @@
 import { createReadStream } from 'node:fs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { Readable } from 'node:stream';
 import { NextResponse } from 'next/server';
 import { resolveVaultPath } from '@/lib/vault';
+import { createDirZipStream, zipDownloadName } from '@/lib/files/zipDir';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -25,9 +27,11 @@ const CONTENT_TYPES = {
   '.wav': 'audio/wav',
   '.mp4': 'video/mp4',
   '.zip': 'application/zip',
-  '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  '.docx':
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
   '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-  '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  '.pptx':
+    'application/vnd.openxmlformats-officedocument.presentationml.presentation',
 };
 
 function normalizeVaultPath(value) {
@@ -50,14 +54,20 @@ function contentDisposition(filename) {
 
 /**
  * GET /api/vault/download?path=…
- * Streams any vault file as an attachment download.
+ * Streams any vault file as an attachment download. Directories stream as a
+ * zip archive with the Secrets/ subtree excluded anywhere in the tree —
+ * isBlockedPath only guards the top-level path, the zip walker must not
+ * leak Secrets when archiving a parent folder or the vault root.
  */
 export async function GET(request) {
   const { searchParams } = new URL(request.url);
   const relativePath = normalizeVaultPath(searchParams.get('path'));
 
   if (!relativePath) {
-    return NextResponse.json({ error: 'Missing path parameter' }, { status: 400 });
+    return NextResponse.json(
+      { error: 'Missing path parameter' },
+      { status: 400 },
+    );
   }
 
   if (isBlockedPath(relativePath)) {
@@ -78,9 +88,29 @@ export async function GET(request) {
     return NextResponse.json({ error: 'File not found' }, { status: 404 });
   }
 
+  if (stats.isDirectory()) {
+    const zipName = zipDownloadName(relativePath);
+    const zipStream = await createDirZipStream(
+      resolveVaultPath(''),
+      relativePath,
+      {
+        // Secrets/ is excluded at ANY depth: isBlockedPath only guards the
+        // top-level path, so archiving a parent folder must not leak it.
+        excludeRelative: (entryPath) => /(^|\/)Secrets(\/|$)/.test(entryPath),
+      },
+    );
+    return new Response(Readable.toWeb(zipStream), {
+      headers: {
+        'Content-Type': 'application/zip',
+        'Content-Disposition': contentDisposition(zipName),
+        'Cache-Control': 'no-store',
+      },
+    });
+  }
+
   if (!stats.isFile()) {
     return NextResponse.json(
-      { error: 'Directory download is not supported' },
+      { error: 'Not a file or directory' },
       { status: 400 },
     );
   }
